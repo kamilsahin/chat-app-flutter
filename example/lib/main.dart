@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:chat_app_flutter/chat_app_flutter.dart';
 
 void main() {
-  runApp(const ExampleApp());
+  runApp(const ProviderScope(child: ExampleApp()));
 }
 
 class ExampleApp extends StatelessWidget {
