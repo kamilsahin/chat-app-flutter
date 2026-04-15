@@ -6,6 +6,7 @@ import 'service_providers.dart';
 // Room list
 final roomListProvider = AsyncNotifierProvider<RoomListNotifier, List<Room>>(
   RoomListNotifier.new,
+  dependencies: [apiServiceProvider],
 );
 
 class RoomListNotifier extends AsyncNotifier<List<Room>> {
@@ -48,11 +49,13 @@ class RoomListNotifier extends AsyncNotifier<List<Room>> {
 
 // Messages for a room
 final messageListProvider =
-    AsyncNotifierProviderFamily<MessageListNotifier, List<Message>, String>(
+    AsyncNotifierProvider.family<MessageListNotifier, List<Message>, String>(
   MessageListNotifier.new,
+  dependencies: [apiServiceProvider],
 );
 
-class MessageListNotifier extends FamilyAsyncNotifier<List<Message>, String> {
+class MessageListNotifier
+    extends FamilyAsyncNotifier<List<Message>, String> {
   @override
   Future<List<Message>> build(String roomId) async {
     return ref.watch(apiServiceProvider).getMessages(roomId);
@@ -84,6 +87,7 @@ class MessageListNotifier extends FamilyAsyncNotifier<List<Message>, String> {
 
 // Pinned message
 final pinnedMessageProvider =
-    FutureProviderFamily<Message?, String>((ref, roomId) {
-  return ref.watch(apiServiceProvider).getPinnedMessage(roomId);
-});
+    FutureProvider.family<Message?, String>(
+  (ref, roomId) => ref.watch(apiServiceProvider).getPinnedMessage(roomId),
+  dependencies: [apiServiceProvider],
+);

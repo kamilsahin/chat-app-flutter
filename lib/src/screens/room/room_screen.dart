@@ -90,8 +90,6 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
   @override
   Widget build(BuildContext context) {
     final messagesAsync = ref.watch(messageListProvider(widget.roomId));
-    final currentUserId =
-        ref.watch(chatConfigProvider).jwtToken; // decoded sub
 
     return Scaffold(
       backgroundColor: const Color(0xFF0F0F0F),
@@ -122,7 +120,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
                 itemBuilder: (context, i) {
                   final msg = messages[i];
                   final isMe = msg.senderId ==
-                      ref.watch(chatConfigProvider).jwtToken;
+                      ref.read(chatConfigProvider).jwtToken;
                   return MessageBubble(
                     message: msg,
                     isMe: isMe,

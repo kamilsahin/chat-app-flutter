@@ -3,12 +3,16 @@ import '../services/api_service.dart';
 import '../services/stomp_service.dart';
 import 'config_provider.dart';
 
-final apiServiceProvider = Provider<ApiService>((ref) {
-  return ApiService(ref.watch(chatConfigProvider));
-});
+final apiServiceProvider = Provider<ApiService>(
+  (ref) => ApiService(ref.watch(chatConfigProvider)),
+  dependencies: [chatConfigProvider],
+);
 
-final stompServiceProvider = Provider<StompService>((ref) {
-  final service = StompService(ref.watch(chatConfigProvider));
-  ref.onDispose(service.disconnect);
-  return service;
-});
+final stompServiceProvider = Provider<StompService>(
+  (ref) {
+    final service = StompService(ref.watch(chatConfigProvider));
+    ref.onDispose(service.disconnect);
+    return service;
+  },
+  dependencies: [chatConfigProvider],
+);

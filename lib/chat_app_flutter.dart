@@ -1,5 +1,3 @@
-library chat_app_flutter;
-
 export 'src/config/chat_config.dart';
 export 'src/screens/room_list/room_list_screen.dart';
 export 'src/screens/room/room_screen.dart';
