@@ -32,7 +32,9 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   final _serverController = TextEditingController(
-    text: 'http://localhost:8081',
+    // Android emulator: 10.0.2.2 → host machine's localhost
+    // Real device: use your computer's local IP (e.g. 192.168.1.x)
+    text: 'http://10.0.2.2:8081',
   );
   final _tokenController = TextEditingController();
 
