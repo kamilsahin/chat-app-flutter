@@ -5,6 +5,7 @@ import '../../models/message.dart';
 import '../../providers/config_provider.dart';
 import '../../providers/room_providers.dart';
 import '../../providers/service_providers.dart';
+import '../../services/stomp_service.dart';
 import '../../widgets/message/message_bubble.dart';
 
 class RoomScreen extends ConsumerStatefulWidget {
@@ -21,25 +22,46 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
   Message? _replyingTo;
   Timer? _typingTimer;
   bool _isTyping = false;
-  // ref is already invalid when dispose() is called (Riverpod unmounts ref
-  // before calling super.unmount → state.dispose). Store the container
-  // directly so we can clear activeRoomProvider safely in dispose().
   late ProviderContainer _container;
+  // Keep named references so we can remove exactly these handlers in dispose()
+  late MessageCallback _onMessage;
+  late TypingCallback _onTyping;
 
   @override
   void initState() {
     super.initState();
     _container = ProviderScope.containerOf(context);
+
+    _onMessage = (message) {
+      _container.read(messageListProvider(widget.roomId).notifier).addMessage(message);
+    };
+    _onTyping = (userId, typing) {
+      _container.read(typingProvider(widget.roomId).notifier).setTyping(userId, typing);
+    };
+
+    // Register after the first frame so messageListProvider is already
+    // being watched (and therefore initialized) by build().
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
-        _container.read(activeRoomProvider.notifier).state = widget.roomId;
+        _container.read(stompServiceProvider).subscribeToRoom(
+          widget.roomId,
+          onMessage: _onMessage,
+          onTyping: _onTyping,
+        );
       }
     });
   }
 
   @override
   void dispose() {
-    _container.read(activeRoomProvider.notifier).state = null;
+    // Unregister our handlers. Because Dart is single-threaded, no STOMP event
+    // can fire between this removal and super.dispose() marking the element
+    // defunct — so addMessage will never be called on a defunct element.
+    _container.read(stompServiceProvider).unsubscribeFromRoom(
+      widget.roomId,
+      onMessage: _onMessage,
+      onTyping: _onTyping,
+    );
     _controller.dispose();
     _scrollController.dispose();
     _typingTimer?.cancel();

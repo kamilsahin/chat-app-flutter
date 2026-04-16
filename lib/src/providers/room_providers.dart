@@ -85,9 +85,6 @@ class MessageListNotifier
   }
 }
 
-// Which room is currently open (so incoming messages are routed to its list)
-final activeRoomProvider = StateProvider<String?>((ref) => null);
-
 // Per-room typing users
 final typingProvider =
     NotifierProvider.family<TypingNotifier, Set<String>, String>(

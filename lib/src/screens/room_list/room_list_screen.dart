@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../models/message.dart';
 import '../../models/room.dart';
 import '../../providers/room_providers.dart';
 import '../../providers/service_providers.dart';
+import '../../services/stomp_service.dart';
 import '../room/room_screen.dart';
 
 class RoomListScreen extends ConsumerStatefulWidget {
@@ -14,6 +16,8 @@ class RoomListScreen extends ConsumerStatefulWidget {
 
 class _RoomListScreenState extends ConsumerState<RoomListScreen> {
   final _subscribedRooms = <String>{};
+  // Store per-room callback references so we can remove them on dispose
+  final Map<String, MessageCallback> _msgHandlers = {};
   bool _stompConnected = false;
   bool _disposed = false;
   late ProviderContainer _container;
@@ -44,26 +48,30 @@ class _RoomListScreenState extends ConsumerState<RoomListScreen> {
   }
 
   void _subscribeRoom(String roomId) {
+    // Only update the room list tile — message list is managed by RoomScreen.
+    void onMsg(Message message) {
+      if (_disposed) return;
+      _container.read(roomListProvider.notifier).updateLastMessage(roomId, message);
+    }
+    _msgHandlers[roomId] = onMsg;
+
     _container.read(stompServiceProvider).subscribeToRoom(
       roomId,
-      onMessage: (message) {
-        if (_disposed) return;
-        _container.read(roomListProvider.notifier).updateLastMessage(roomId, message);
-        if (_container.read(activeRoomProvider) == roomId) {
-          _container.read(messageListProvider(roomId).notifier).addMessage(message);
-        }
-      },
-      onTyping: (userId, typing) {
-        if (_disposed) return;
-        _container.read(typingProvider(roomId).notifier).setTyping(userId, typing);
-      },
-      onPresence: (_, __) {},
+      onMessage: onMsg,
     );
   }
 
   @override
   void dispose() {
     _disposed = true;
+    // Remove our handlers without fully disconnecting (RoomScreen may still
+    // have its own handlers for the active room). Then disconnect the client.
+    for (final entry in _msgHandlers.entries) {
+      _container.read(stompServiceProvider).unsubscribeFromRoom(
+        entry.key,
+        onMessage: entry.value,
+      );
+    }
     _container.read(stompServiceProvider).disconnect();
     super.dispose();
   }
