@@ -255,7 +255,7 @@ class _RoomTile extends ConsumerWidget {
                     style: TextStyle(color: Colors.white)),
                 onTap: () {
                   Navigator.pop(context);
-                  ref.read(roomListProvider.notifier).unmuteRoom(room.id);
+                  ref.read(roomListProvider.notifier).unmuteRoom(room.id, currentUserId);
                 },
               ),
             ] else ...[
@@ -273,7 +273,7 @@ class _RoomTile extends ConsumerWidget {
                 onTap: () {
                   Navigator.pop(context);
                   ref.read(roomListProvider.notifier)
-                      .muteRoom(room.id, duration: 'PT1H');
+                      .muteRoom(room.id, currentUserId, duration: 'PT1H');
                 },
               ),
               _MuteOption(
@@ -282,7 +282,7 @@ class _RoomTile extends ConsumerWidget {
                 onTap: () {
                   Navigator.pop(context);
                   ref.read(roomListProvider.notifier)
-                      .muteRoom(room.id, duration: 'PT8H');
+                      .muteRoom(room.id, currentUserId, duration: 'PT8H');
                 },
               ),
               _MuteOption(
@@ -291,7 +291,7 @@ class _RoomTile extends ConsumerWidget {
                 onTap: () {
                   Navigator.pop(context);
                   ref.read(roomListProvider.notifier)
-                      .muteRoom(room.id, duration: 'P7D');
+                      .muteRoom(room.id, currentUserId, duration: 'P7D');
                 },
               ),
               _MuteOption(
@@ -299,7 +299,7 @@ class _RoomTile extends ConsumerWidget {
                 icon: Icons.notifications_off,
                 onTap: () {
                   Navigator.pop(context);
-                  ref.read(roomListProvider.notifier).muteRoom(room.id);
+                  ref.read(roomListProvider.notifier).muteRoom(room.id, currentUserId);
                 },
               ),
             ],

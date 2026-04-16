@@ -45,31 +45,46 @@ class RoomListNotifier extends AsyncNotifier<List<Room>> {
     });
   }
 
-  Future<void> muteRoom(String roomId, {String? duration}) async {
+  Future<void> muteRoom(String roomId, String userId, {String? duration}) async {
     await ref.read(apiServiceProvider).muteRoom(roomId, duration: duration);
-    // Re-fetch the room so members list reflects the updated muted state
-    final updated = await ref.read(apiServiceProvider).getRoom(roomId);
+    // Update local state immediately — no re-fetch needed.
+    final mutedUntil = duration != null ? _parseUntil(duration) : null;
+    _patchMember(roomId, userId, muted: true, mutedUntil: mutedUntil);
+  }
+
+  Future<void> unmuteRoom(String roomId, String userId) async {
+    await ref.read(apiServiceProvider).unmuteRoom(roomId);
+    _patchMember(roomId, userId, muted: false, mutedUntil: null);
+  }
+
+  void _patchMember(String roomId, String userId, {required bool muted, DateTime? mutedUntil}) {
     state.whenData((rooms) {
-      state = AsyncData(
-          rooms.map((r) => r.id == roomId ? updated.copyWith(
-            lastMessage: r.lastMessage,
-            lastMessageAt: r.lastMessageAt,
-            unreadCount: r.unreadCount,
-          ) : r).toList());
+      state = AsyncData(rooms.map((r) {
+        if (r.id != roomId) return r;
+        final members = r.members.map((m) {
+          if (m.userId != userId) return m;
+          return RoomMember(
+            userId: m.userId,
+            role: m.role,
+            joinedAt: m.joinedAt,
+            muted: muted,
+            mutedUntil: mutedUntil,
+          );
+        }).toList();
+        return r.copyWith(members: members);
+      }).toList());
     });
   }
 
-  Future<void> unmuteRoom(String roomId) async {
-    await ref.read(apiServiceProvider).unmuteRoom(roomId);
-    final updated = await ref.read(apiServiceProvider).getRoom(roomId);
-    state.whenData((rooms) {
-      state = AsyncData(
-          rooms.map((r) => r.id == roomId ? updated.copyWith(
-            lastMessage: r.lastMessage,
-            lastMessageAt: r.lastMessageAt,
-            unreadCount: r.unreadCount,
-          ) : r).toList());
-    });
+  /// Parses simple ISO-8601 durations used in the mute sheet.
+  static DateTime _parseUntil(String duration) {
+    final now = DateTime.now();
+    return switch (duration) {
+      'PT1H' => now.add(const Duration(hours: 1)),
+      'PT8H' => now.add(const Duration(hours: 8)),
+      'P7D'  => now.add(const Duration(days: 7)),
+      _      => now.add(const Duration(days: 3650)),
+    };
   }
 
   void clearUnread(String roomId) {
