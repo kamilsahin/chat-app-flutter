@@ -25,31 +25,19 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
   @override
   void initState() {
     super.initState();
-    _connect();
-  }
-
-  void _connect() {
-    final stomp = ref.read(stompServiceProvider);
-    stomp.connect(onConnected: () {
-      stomp.subscribeToRoom(
-        widget.roomId,
-        onMessage: (message) {
-          ref
-              .read(messageListProvider(widget.roomId).notifier)
-              .addMessage(message);
-          ref
-              .read(roomListProvider.notifier)
-              .updateLastMessage(widget.roomId, message);
-        },
-        onTyping: (userId, typing) => setState(() {}),
-        onPresence: (userId, online) {},
-      );
+    // Mark this room as active so the RoomListScreen subscription
+    // routes incoming messages to the message list provider.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        ref.read(activeRoomProvider.notifier).state = widget.roomId;
+      }
     });
   }
 
   @override
   void dispose() {
-    ref.read(stompServiceProvider).unsubscribeFromRoom(widget.roomId);
+    // Clear active room so messages stop being appended after leaving
+    ref.read(activeRoomProvider.notifier).state = null;
     _controller.dispose();
     _scrollController.dispose();
     _typingTimer?.cancel();
@@ -90,14 +78,22 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
   @override
   Widget build(BuildContext context) {
     final messagesAsync = ref.watch(messageListProvider(widget.roomId));
+    final typingUsers = ref.watch(typingProvider(widget.roomId));
 
     return Scaffold(
       backgroundColor: const Color(0xFF0F0F0F),
       appBar: AppBar(
         backgroundColor: const Color(0xFF1A1A1A),
-        title: const Text(
-          'Sohbet',
-          style: TextStyle(color: Colors.white),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Sohbet', style: TextStyle(color: Colors.white)),
+            if (typingUsers.isNotEmpty)
+              Text(
+                'yazıyor...',
+                style: const TextStyle(color: Colors.white54, fontSize: 12),
+              ),
+          ],
         ),
         iconTheme: const IconThemeData(color: Colors.white),
       ),

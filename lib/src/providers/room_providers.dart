@@ -85,6 +85,28 @@ class MessageListNotifier
   }
 }
 
+// Which room is currently open (so incoming messages are routed to its list)
+final activeRoomProvider = StateProvider<String?>((ref) => null);
+
+// Per-room typing users
+final typingProvider =
+    NotifierProvider.family<TypingNotifier, Set<String>, String>(
+  TypingNotifier.new,
+);
+
+class TypingNotifier extends FamilyNotifier<Set<String>, String> {
+  @override
+  Set<String> build(String arg) => {};
+
+  void setTyping(String userId, bool isTyping) {
+    if (isTyping) {
+      state = {...state, userId};
+    } else {
+      state = state.difference({userId});
+    }
+  }
+}
+
 // Pinned message
 final pinnedMessageProvider =
     FutureProvider.family<Message?, String>(

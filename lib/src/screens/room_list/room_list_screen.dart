@@ -2,13 +2,79 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../models/room.dart';
 import '../../providers/room_providers.dart';
+import '../../providers/service_providers.dart';
 import '../room/room_screen.dart';
 
-class RoomListScreen extends ConsumerWidget {
+class RoomListScreen extends ConsumerStatefulWidget {
   const RoomListScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<RoomListScreen> createState() => _RoomListScreenState();
+}
+
+class _RoomListScreenState extends ConsumerState<RoomListScreen> {
+  final _subscribedRooms = <String>{};
+  bool _stompConnected = false;
+  bool _disposed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _connect();
+  }
+
+  void _connect() {
+    ref.read(stompServiceProvider).connect(onConnected: () {
+      if (_disposed) return;
+      _stompConnected = true;
+      _subscribeToLoadedRooms();
+    });
+  }
+
+  void _subscribeToLoadedRooms() {
+    if (_disposed || !_stompConnected) return;
+    final rooms = ref.read(roomListProvider).valueOrNull ?? [];
+    for (final room in rooms) {
+      if (_subscribedRooms.contains(room.id)) continue;
+      _subscribedRooms.add(room.id);
+      _subscribeRoom(room.id);
+    }
+  }
+
+  void _subscribeRoom(String roomId) {
+    ref.read(stompServiceProvider).subscribeToRoom(
+      roomId,
+      onMessage: (message) {
+        if (_disposed) return;
+        // Always update the room list tile (last message, unread count)
+        ref.read(roomListProvider.notifier).updateLastMessage(roomId, message);
+        // Only append to message list when this room is open
+        if (ref.read(activeRoomProvider) == roomId) {
+          ref.read(messageListProvider(roomId).notifier).addMessage(message);
+        }
+      },
+      onTyping: (userId, typing) {
+        if (_disposed) return;
+        ref.read(typingProvider(roomId).notifier).setTyping(userId, typing);
+      },
+      onPresence: (_, __) {},
+    );
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    ref.read(stompServiceProvider).disconnect();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Subscribe to rooms as soon as they finish loading
+    ref.listen(roomListProvider, (_, next) {
+      next.whenData((_) => _subscribeToLoadedRooms());
+    });
+
     final roomsAsync = ref.watch(roomListProvider);
 
     return Scaffold(
@@ -116,7 +182,12 @@ class _RoomTile extends StatelessWidget {
       ),
       onTap: () => Navigator.push(
         context,
-        MaterialPageRoute(builder: (_) => RoomScreen(roomId: room.id)),
+        MaterialPageRoute(
+          builder: (_) => UncontrolledProviderScope(
+            container: ProviderScope.containerOf(context),
+            child: RoomScreen(roomId: room.id),
+          ),
+        ),
       ),
     );
   }
