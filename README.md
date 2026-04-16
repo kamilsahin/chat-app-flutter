@@ -4,10 +4,37 @@ A Flutter package that embeds a real-time chat UI into any existing app. Connect
 
 ## Features
 
+### Messaging
 - Real-time messaging via WebSocket (STOMP over SockJS)
-- Room list with last message preview and unread count badge
-- Message bubbles with reply and emoji reaction support
-- Typing indicators
+- Own messages right-aligned, others left-aligned
+- Deleted message placeholder ("Mesaj silindi")
+- Pinned message support
+
+### Room List
+- Last message preview and timestamp
+- Unread count badge (green for normal, grey for muted)
+- Pull-to-refresh
+- Rooms sorted by latest activity
+
+### Reply
+- Reply to any message with a preview bar above the input field
+- Replied message shown as a quoted block inside the bubble
+- Tap the quoted block to scroll to and highlight the original message
+
+### Emoji Reactions
+- Long-press a bubble to open emoji picker (6 emojis: 👍 ❤️ 😂 😮 😢 🙏)
+- Already-selected emoji highlighted with a green ring
+- Reactions shown as tappable chips at the bottom-right of the bubble
+- Own reaction highlighted with a green border on the chip
+
+### Mute / Unmute
+- Long-press a room tile to open the mute sheet
+- Duration options: 1 hour, 8 hours, 1 week, permanent
+- Muted rooms show a bell-off icon next to the name
+- Optimistic local state update — no re-fetch needed
+
+### Other
+- Typing indicators in room app bar
 - JWT-based auth — your app issues the token, this package just uses it
 - Easily embedded as a path or git dependency
 
