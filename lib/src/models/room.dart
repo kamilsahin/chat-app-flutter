@@ -71,13 +71,18 @@ class Room {
     return DateTime.now().isBefore(member.mutedUntil!);
   }
 
-  Room copyWith({String? lastMessage, DateTime? lastMessageAt, int? unreadCount}) =>
+  Room copyWith({
+    String? lastMessage,
+    DateTime? lastMessageAt,
+    int? unreadCount,
+    List<RoomMember>? members,
+  }) =>
       Room(
         id: id,
         type: type,
         name: name,
         avatarUrl: avatarUrl,
-        members: members,
+        members: members ?? this.members,
         createdAt: createdAt,
         lastMessage: lastMessage ?? this.lastMessage,
         lastMessageAt: lastMessageAt ?? this.lastMessageAt,

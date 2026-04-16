@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../models/message.dart';
 import '../../models/room.dart';
+import '../../providers/config_provider.dart';
 import '../../providers/room_providers.dart';
 import '../../providers/service_providers.dart';
 import '../../services/stomp_service.dart';
@@ -132,7 +133,10 @@ class _RoomListScreenState extends ConsumerState<RoomListScreen> {
                     color: Color(0xFF2A2A2A),
                     indent: 72,
                   ),
-                  itemBuilder: (context, i) => _RoomTile(room: rooms[i]),
+                  itemBuilder: (context, i) => _RoomTile(
+                    room: rooms[i],
+                    currentUserId: ref.read(chatConfigProvider).userId,
+                  ),
                 ),
               ),
       ),
@@ -140,21 +144,36 @@ class _RoomListScreenState extends ConsumerState<RoomListScreen> {
   }
 }
 
-class _RoomTile extends StatelessWidget {
+class _RoomTile extends ConsumerWidget {
   final Room room;
-  const _RoomTile({required this.room});
+  final String currentUserId;
+  const _RoomTile({required this.room, required this.currentUserId});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final muted = room.isMuted(currentUserId);
+
     return ListTile(
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       leading: _Avatar(room: room),
-      title: Text(
-        room.name ?? 'Sohbet',
-        style: const TextStyle(
-          color: Colors.white,
-          fontWeight: FontWeight.w500,
-        ),
+      title: Row(
+        children: [
+          Expanded(
+            child: Text(
+              room.name ?? 'Sohbet',
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          if (muted)
+            const Padding(
+              padding: EdgeInsets.only(left: 4),
+              child: Icon(Icons.notifications_off,
+                  size: 14, color: Colors.white38),
+            ),
+        ],
       ),
       subtitle: room.lastMessage != null
           ? Text(
@@ -178,7 +197,9 @@ class _RoomTile extends StatelessWidget {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
               decoration: BoxDecoration(
-                color: const Color(0xFF4CAF50),
+                color: muted
+                    ? Colors.white24
+                    : const Color(0xFF4CAF50),
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Text(
@@ -202,6 +223,90 @@ class _RoomTile extends StatelessWidget {
           ),
         ),
       ),
+      onLongPress: () => _showMuteSheet(context, ref, muted),
+    );
+  }
+
+  void _showMuteSheet(BuildContext context, WidgetRef ref, bool muted) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1A1A1A),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 8),
+            Container(
+              width: 36, height: 4,
+              decoration: BoxDecoration(
+                color: Colors.white24,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 8),
+            if (muted) ...[
+              ListTile(
+                leading: const Icon(Icons.notifications,
+                    color: Color(0xFF4CAF50)),
+                title: const Text('Bildirimleri aç',
+                    style: TextStyle(color: Colors.white)),
+                onTap: () {
+                  Navigator.pop(context);
+                  ref.read(roomListProvider.notifier).unmuteRoom(room.id);
+                },
+              ),
+            ] else ...[
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text('Ne kadar sessize alınsın?',
+                      style: TextStyle(color: Colors.white54, fontSize: 13)),
+                ),
+              ),
+              _MuteOption(
+                label: '1 saat',
+                icon: Icons.notifications_off_outlined,
+                onTap: () {
+                  Navigator.pop(context);
+                  ref.read(roomListProvider.notifier)
+                      .muteRoom(room.id, duration: 'PT1H');
+                },
+              ),
+              _MuteOption(
+                label: '8 saat',
+                icon: Icons.notifications_off_outlined,
+                onTap: () {
+                  Navigator.pop(context);
+                  ref.read(roomListProvider.notifier)
+                      .muteRoom(room.id, duration: 'PT8H');
+                },
+              ),
+              _MuteOption(
+                label: '1 hafta',
+                icon: Icons.notifications_off_outlined,
+                onTap: () {
+                  Navigator.pop(context);
+                  ref.read(roomListProvider.notifier)
+                      .muteRoom(room.id, duration: 'P7D');
+                },
+              ),
+              _MuteOption(
+                label: 'Kalıcı olarak sessize al',
+                icon: Icons.notifications_off,
+                onTap: () {
+                  Navigator.pop(context);
+                  ref.read(roomListProvider.notifier).muteRoom(room.id);
+                },
+              ),
+            ],
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
     );
   }
 
@@ -217,6 +322,22 @@ class _RoomTile extends StatelessWidget {
       return days[time.weekday - 1];
     }
     return '${time.day}/${time.month}/${time.year}';
+  }
+}
+
+class _MuteOption extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final VoidCallback onTap;
+  const _MuteOption({required this.label, required this.icon, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      leading: Icon(icon, color: Colors.white70),
+      title: Text(label, style: const TextStyle(color: Colors.white)),
+      onTap: onTap,
+    );
   }
 }
 

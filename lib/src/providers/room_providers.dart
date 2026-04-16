@@ -45,6 +45,33 @@ class RoomListNotifier extends AsyncNotifier<List<Room>> {
     });
   }
 
+  Future<void> muteRoom(String roomId, {String? duration}) async {
+    await ref.read(apiServiceProvider).muteRoom(roomId, duration: duration);
+    // Re-fetch the room so members list reflects the updated muted state
+    final updated = await ref.read(apiServiceProvider).getRoom(roomId);
+    state.whenData((rooms) {
+      state = AsyncData(
+          rooms.map((r) => r.id == roomId ? updated.copyWith(
+            lastMessage: r.lastMessage,
+            lastMessageAt: r.lastMessageAt,
+            unreadCount: r.unreadCount,
+          ) : r).toList());
+    });
+  }
+
+  Future<void> unmuteRoom(String roomId) async {
+    await ref.read(apiServiceProvider).unmuteRoom(roomId);
+    final updated = await ref.read(apiServiceProvider).getRoom(roomId);
+    state.whenData((rooms) {
+      state = AsyncData(
+          rooms.map((r) => r.id == roomId ? updated.copyWith(
+            lastMessage: r.lastMessage,
+            lastMessageAt: r.lastMessageAt,
+            unreadCount: r.unreadCount,
+          ) : r).toList());
+    });
+  }
+
   void clearUnread(String roomId) {
     state.whenData((rooms) {
       state = AsyncData(rooms.map((r) {

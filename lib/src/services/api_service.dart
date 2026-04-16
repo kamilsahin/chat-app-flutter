@@ -81,8 +81,13 @@ class ApiService {
   }
 
   // Mute
-  Future<void> muteRoom(String roomId, String duration) async {
-    await _dio.put('/api/rooms/$roomId/mute', data: {'duration': duration});
+  /// [duration] — ISO-8601 string e.g. "PT1H", "PT8H", "P7D".
+  /// Pass null for permanent (no expiry).
+  Future<void> muteRoom(String roomId, {String? duration}) async {
+    await _dio.put(
+      '/api/rooms/$roomId/mute',
+      data: duration != null ? {'duration': duration} : {},
+    );
   }
 
   Future<void> unmuteRoom(String roomId) async {
