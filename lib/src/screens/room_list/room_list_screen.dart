@@ -20,11 +20,16 @@ class _RoomListScreenState extends ConsumerState<RoomListScreen> {
   final Map<String, MessageCallback> _msgHandlers = {};
   bool _stompConnected = false;
   bool _disposed = false;
+  bool _initialized = false;
   late ProviderContainer _container;
 
   @override
-  void initState() {
-    super.initState();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_initialized) return;
+    _initialized = true;
+    // ProviderScope.containerOf uses dependOnInheritedWidgetOfExactType,
+    // which must be called from didChangeDependencies, not initState.
     _container = ProviderScope.containerOf(context);
     _connect();
   }

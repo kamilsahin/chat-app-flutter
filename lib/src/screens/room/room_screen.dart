@@ -22,14 +22,19 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
   Message? _replyingTo;
   Timer? _typingTimer;
   bool _isTyping = false;
+  bool _initialized = false;
   late ProviderContainer _container;
   // Keep named references so we can remove exactly these handlers in dispose()
   late MessageCallback _onMessage;
   late TypingCallback _onTyping;
 
   @override
-  void initState() {
-    super.initState();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_initialized) return;
+    _initialized = true;
+    // ProviderScope.containerOf uses dependOnInheritedWidgetOfExactType,
+    // which must be called from didChangeDependencies, not initState.
     _container = ProviderScope.containerOf(context);
 
     _onMessage = (message) {
