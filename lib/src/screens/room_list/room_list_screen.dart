@@ -16,15 +16,17 @@ class _RoomListScreenState extends ConsumerState<RoomListScreen> {
   final _subscribedRooms = <String>{};
   bool _stompConnected = false;
   bool _disposed = false;
+  late ProviderContainer _container;
 
   @override
   void initState() {
     super.initState();
+    _container = ProviderScope.containerOf(context);
     _connect();
   }
 
   void _connect() {
-    ref.read(stompServiceProvider).connect(onConnected: () {
+    _container.read(stompServiceProvider).connect(onConnected: () {
       if (_disposed) return;
       _stompConnected = true;
       _subscribeToLoadedRooms();
@@ -33,7 +35,7 @@ class _RoomListScreenState extends ConsumerState<RoomListScreen> {
 
   void _subscribeToLoadedRooms() {
     if (_disposed || !_stompConnected) return;
-    final rooms = ref.read(roomListProvider).valueOrNull ?? [];
+    final rooms = _container.read(roomListProvider).valueOrNull ?? [];
     for (final room in rooms) {
       if (_subscribedRooms.contains(room.id)) continue;
       _subscribedRooms.add(room.id);
@@ -42,20 +44,18 @@ class _RoomListScreenState extends ConsumerState<RoomListScreen> {
   }
 
   void _subscribeRoom(String roomId) {
-    ref.read(stompServiceProvider).subscribeToRoom(
+    _container.read(stompServiceProvider).subscribeToRoom(
       roomId,
       onMessage: (message) {
         if (_disposed) return;
-        // Always update the room list tile (last message, unread count)
-        ref.read(roomListProvider.notifier).updateLastMessage(roomId, message);
-        // Only append to message list when this room is open
-        if (ref.read(activeRoomProvider) == roomId) {
-          ref.read(messageListProvider(roomId).notifier).addMessage(message);
+        _container.read(roomListProvider.notifier).updateLastMessage(roomId, message);
+        if (_container.read(activeRoomProvider) == roomId) {
+          _container.read(messageListProvider(roomId).notifier).addMessage(message);
         }
       },
       onTyping: (userId, typing) {
         if (_disposed) return;
-        ref.read(typingProvider(roomId).notifier).setTyping(userId, typing);
+        _container.read(typingProvider(roomId).notifier).setTyping(userId, typing);
       },
       onPresence: (_, __) {},
     );
@@ -64,7 +64,7 @@ class _RoomListScreenState extends ConsumerState<RoomListScreen> {
   @override
   void dispose() {
     _disposed = true;
-    ref.read(stompServiceProvider).disconnect();
+    _container.read(stompServiceProvider).disconnect();
     super.dispose();
   }
 

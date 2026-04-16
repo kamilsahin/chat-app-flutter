@@ -21,23 +21,25 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
   Message? _replyingTo;
   Timer? _typingTimer;
   bool _isTyping = false;
+  // ref is already invalid when dispose() is called (Riverpod unmounts ref
+  // before calling super.unmount → state.dispose). Store the container
+  // directly so we can clear activeRoomProvider safely in dispose().
+  late ProviderContainer _container;
 
   @override
   void initState() {
     super.initState();
-    // Mark this room as active so the RoomListScreen subscription
-    // routes incoming messages to the message list provider.
+    _container = ProviderScope.containerOf(context);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
-        ref.read(activeRoomProvider.notifier).state = widget.roomId;
+        _container.read(activeRoomProvider.notifier).state = widget.roomId;
       }
     });
   }
 
   @override
   void dispose() {
-    // Clear active room so messages stop being appended after leaving
-    ref.read(activeRoomProvider.notifier).state = null;
+    _container.read(activeRoomProvider.notifier).state = null;
     _controller.dispose();
     _scrollController.dispose();
     _typingTimer?.cancel();
