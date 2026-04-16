@@ -1,13 +1,14 @@
 import 'package:flutter/material.dart';
 import '../../models/message.dart';
 
-class MessageBubble extends StatelessWidget {
+class MessageBubble extends StatefulWidget {
   final Message message;
   final bool isMe;
   final String currentUserId;
   final Message? replyToMessage;
   final void Function(Message) onReply;
   final void Function(Message, String) onReact;
+  final void Function(String messageId)? onReplyTap;
 
   const MessageBubble({
     super.key,
@@ -17,22 +18,46 @@ class MessageBubble extends StatelessWidget {
     this.replyToMessage,
     required this.onReply,
     required this.onReact,
+    this.onReplyTap,
   });
 
   @override
+  State<MessageBubble> createState() => MessageBubbleState();
+}
+
+class MessageBubbleState extends State<MessageBubble> {
+  bool _highlighted = false;
+
+  /// Called externally (via GlobalKey) after scroll to flash the bubble.
+  void highlight() async {
+    if (!mounted) return;
+    setState(() => _highlighted = true);
+    await Future.delayed(const Duration(milliseconds: 1200));
+    if (mounted) setState(() => _highlighted = false);
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final hasReactions = message.reactions.isNotEmpty;
+    final hasReactions = widget.message.reactions.isNotEmpty;
 
     return GestureDetector(
       onLongPress: () => _showActions(context),
-      child: Padding(
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        decoration: BoxDecoration(
+          color: _highlighted
+              ? const Color(0xFF4CAF50).withValues(alpha: 0.12)
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(12),
+        ),
         padding: const EdgeInsets.symmetric(vertical: 2),
         child: Row(
-          mainAxisAlignment:
-              isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
+          mainAxisAlignment: widget.isMe
+              ? MainAxisAlignment.end
+              : MainAxisAlignment.start,
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
-            if (!isMe) ...[
+            if (!widget.isMe) ...[
               const CircleAvatar(
                 radius: 14,
                 backgroundColor: Color(0xFF2A2A2A),
@@ -42,10 +67,10 @@ class MessageBubble extends StatelessWidget {
             ],
             Flexible(
               child: Column(
-                crossAxisAlignment:
-                    isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+                crossAxisAlignment: widget.isMe
+                    ? CrossAxisAlignment.end
+                    : CrossAxisAlignment.start,
                 children: [
-                  // Bubble + reactions overlaid at bottom corner
                   Stack(
                     clipBehavior: Clip.none,
                     children: [
@@ -54,21 +79,23 @@ class MessageBubble extends StatelessWidget {
                           left: 12,
                           right: 12,
                           top: 8,
-                          // Extra space so reactions don't cover text
                           bottom: hasReactions ? 18 : 8,
                         ),
                         constraints: BoxConstraints(
-                          maxWidth: MediaQuery.of(context).size.width * 0.72,
+                          maxWidth:
+                              MediaQuery.of(context).size.width * 0.72,
                         ),
                         decoration: BoxDecoration(
-                          color: isMe
+                          color: widget.isMe
                               ? const Color(0xFF2A5C3F)
                               : const Color(0xFF1E1E1E),
                           borderRadius: BorderRadius.only(
                             topLeft: const Radius.circular(16),
                             topRight: const Radius.circular(16),
-                            bottomLeft: Radius.circular(isMe ? 16 : 4),
-                            bottomRight: Radius.circular(isMe ? 4 : 16),
+                            bottomLeft:
+                                Radius.circular(widget.isMe ? 16 : 4),
+                            bottomRight:
+                                Radius.circular(widget.isMe ? 4 : 16),
                           ),
                         ),
                         child: _buildContent(),
@@ -76,20 +103,22 @@ class MessageBubble extends StatelessWidget {
                       if (hasReactions)
                         Positioned(
                           bottom: -10,
-                          right: isMe ? 8 : null,
-                          left: isMe ? null : 8,
+                          right: widget.isMe ? 8 : null,
+                          left: widget.isMe ? null : 8,
                           child: _ReactionsRow(
-                            reactions: message.reactions,
-                            currentUserId: currentUserId,
-                            onTap: (emoji) => onReact(message, emoji),
+                            reactions: widget.message.reactions,
+                            currentUserId: widget.currentUserId,
+                            onTap: (emoji) =>
+                                widget.onReact(widget.message, emoji),
                           ),
                         ),
                     ],
                   ),
                   SizedBox(height: hasReactions ? 14 : 2),
                   Text(
-                    _formatTime(message.createdAt),
-                    style: const TextStyle(color: Colors.white38, fontSize: 10),
+                    _formatTime(widget.message.createdAt),
+                    style: const TextStyle(
+                        color: Colors.white38, fontSize: 10),
                   ),
                 ],
               ),
@@ -101,47 +130,57 @@ class MessageBubble extends StatelessWidget {
   }
 
   Widget _buildContent() {
-    if (message.isDeleted) {
+    if (widget.message.isDeleted) {
       return const Text(
         'Bu mesaj silindi',
         style: TextStyle(
-            color: Colors.white38, fontStyle: FontStyle.italic, fontSize: 14),
+            color: Colors.white38,
+            fontStyle: FontStyle.italic,
+            fontSize: 14),
       );
     }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (replyToMessage != null)
-          Container(
-            margin: const EdgeInsets.only(bottom: 6),
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-            decoration: BoxDecoration(
-              color: Colors.black26,
-              borderRadius: BorderRadius.circular(8),
-              border: const Border(
-                  left: BorderSide(color: Color(0xFF4CAF50), width: 3)),
-            ),
-            child: Text(
-              replyToMessage!.isDeleted
-                  ? 'Bu mesaj silindi'
-                  : (replyToMessage!.content ?? ''),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(color: Colors.white60, fontSize: 12),
+        if (widget.replyToMessage != null)
+          GestureDetector(
+            onTap: () => widget.onReplyTap?.call(widget.replyToMessage!.id),
+            child: Container(
+              margin: const EdgeInsets.only(bottom: 6),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.black26,
+                borderRadius: BorderRadius.circular(8),
+                border: const Border(
+                    left:
+                        BorderSide(color: Color(0xFF4CAF50), width: 3)),
+              ),
+              child: Text(
+                widget.replyToMessage!.isDeleted
+                    ? 'Bu mesaj silindi'
+                    : (widget.replyToMessage!.content ?? ''),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style:
+                    const TextStyle(color: Colors.white60, fontSize: 12),
+              ),
             ),
           ),
-        if (message.type == MessageType.text)
+        if (widget.message.type == MessageType.text)
           Text(
-            message.content ?? '',
-            style: const TextStyle(color: Colors.white, fontSize: 15),
+            widget.message.content ?? '',
+            style:
+                const TextStyle(color: Colors.white, fontSize: 15),
           ),
-        if (message.type == MessageType.image && message.imageUrl != null)
+        if (widget.message.type == MessageType.image &&
+            widget.message.imageUrl != null)
           ClipRRect(
             borderRadius: BorderRadius.circular(8),
-            child: Image.network(message.imageUrl!, width: 200),
+            child: Image.network(widget.message.imageUrl!, width: 200),
           ),
-        if (message.isEdited)
+        if (widget.message.isEdited)
           const Text(
             'düzenlendi',
             style: TextStyle(color: Colors.white38, fontSize: 10),
@@ -172,11 +211,11 @@ class MessageBubble extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             _EmojiPicker(
-              currentReactions: message.reactions,
-              currentUserId: currentUserId,
+              currentReactions: widget.message.reactions,
+              currentUserId: widget.currentUserId,
               onSelect: (e) {
                 Navigator.pop(context);
-                onReact(message, e);
+                widget.onReact(widget.message, e);
               },
             ),
             const Divider(color: Color(0xFF2A2A2A), height: 1),
@@ -186,7 +225,7 @@ class MessageBubble extends StatelessWidget {
                   style: TextStyle(color: Colors.white)),
               onTap: () {
                 Navigator.pop(context);
-                onReply(message);
+                widget.onReply(widget.message);
               },
             ),
             const SizedBox(height: 8),
@@ -273,7 +312,8 @@ class _ReactionsRow extends StatelessWidget {
           onTap: () => onTap(r.emoji),
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 150),
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            padding:
+                const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
             decoration: BoxDecoration(
               color: iReacted
                   ? const Color(0xFF4CAF50).withValues(alpha: 0.2)

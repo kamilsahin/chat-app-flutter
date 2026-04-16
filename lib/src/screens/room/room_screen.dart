@@ -24,9 +24,11 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
   bool _isTyping = false;
   bool _initialized = false;
   late ProviderContainer _container;
-  // Keep named references so we can remove exactly these handlers in dispose()
   late MessageCallback _onMessage;
   late TypingCallback _onTyping;
+
+  // One GlobalKey per message id — used for scroll-to + highlight
+  final Map<String, GlobalKey<MessageBubbleState>> _bubbleKeys = {};
 
   @override
   void didChangeDependencies() {
@@ -104,6 +106,49 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
     }
   }
 
+  Future<void> _scrollToMessage(String messageId) async {
+    final key = _bubbleKeys[messageId];
+    if (key == null) return;
+
+    if (key.currentContext != null) {
+      // Item is already built — scroll directly to it
+      await Scrollable.ensureVisible(
+        key.currentContext!,
+        duration: const Duration(milliseconds: 400),
+        curve: Curves.easeInOut,
+        alignment: 0.5,
+      );
+    } else {
+      // Item not in viewport — scroll to an estimated offset and wait for it
+      // to be built, then fine-tune with ensureVisible.
+      final messages =
+          ref.read(messageListProvider(widget.roomId)).valueOrNull ?? [];
+      final idx = messages.indexWhere((m) => m.id == messageId);
+      if (idx == -1) return;
+
+      const estimatedItemHeight = 72.0;
+      final target = (idx * estimatedItemHeight)
+          .clamp(0.0, _scrollController.position.maxScrollExtent);
+      await _scrollController.animateTo(
+        target,
+        duration: const Duration(milliseconds: 350),
+        curve: Curves.easeOut,
+      );
+      // Give the builder a frame to build the newly visible item
+      await Future.delayed(const Duration(milliseconds: 80));
+      if (key.currentContext != null) {
+        await Scrollable.ensureVisible(
+          key.currentContext!,
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeInOut,
+          alignment: 0.5,
+        );
+      }
+    }
+
+    key.currentState?.highlight();
+  }
+
   @override
   Widget build(BuildContext context) {
     final messagesAsync = ref.watch(messageListProvider(widget.roomId));
@@ -149,7 +194,12 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
                   final replyTo = msg.replyTo != null
                       ? messages.where((m) => m.id == msg.replyTo).firstOrNull
                       : null;
+                  final bubbleKey = _bubbleKeys.putIfAbsent(
+                    msg.id,
+                    () => GlobalKey<MessageBubbleState>(),
+                  );
                   return MessageBubble(
+                    key: bubbleKey,
                     message: msg,
                     isMe: isMe,
                     currentUserId: userId,
@@ -158,6 +208,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
                     onReact: (m, emoji) => ref
                         .read(stompServiceProvider)
                         .sendReaction(widget.roomId, m.id, emoji),
+                    onReplyTap: _scrollToMessage,
                   );
                 },
               ),
