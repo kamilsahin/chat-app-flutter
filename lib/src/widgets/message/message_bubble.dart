@@ -5,6 +5,7 @@ class MessageBubble extends StatelessWidget {
   final Message message;
   final bool isMe;
   final String currentUserId;
+  final Message? replyToMessage;
   final void Function(Message) onReply;
   final void Function(Message, String) onReact;
 
@@ -13,12 +14,15 @@ class MessageBubble extends StatelessWidget {
     required this.message,
     required this.isMe,
     required this.currentUserId,
+    this.replyToMessage,
     required this.onReply,
     required this.onReact,
   });
 
   @override
   Widget build(BuildContext context) {
+    final hasReactions = message.reactions.isNotEmpty;
+
     return GestureDetector(
       onLongPress: () => _showActions(context),
       child: Padding(
@@ -41,36 +45,51 @@ class MessageBubble extends StatelessWidget {
                 crossAxisAlignment:
                     isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
                 children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 8),
-                    constraints: BoxConstraints(
-                      maxWidth: MediaQuery.of(context).size.width * 0.72,
-                    ),
-                    decoration: BoxDecoration(
-                      color: isMe
-                          ? const Color(0xFF2A5C3F)
-                          : const Color(0xFF1E1E1E),
-                      borderRadius: BorderRadius.only(
-                        topLeft: const Radius.circular(16),
-                        topRight: const Radius.circular(16),
-                        bottomLeft: Radius.circular(isMe ? 16 : 4),
-                        bottomRight: Radius.circular(isMe ? 4 : 16),
+                  // Bubble + reactions overlaid at bottom corner
+                  Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      Container(
+                        padding: EdgeInsets.only(
+                          left: 12,
+                          right: 12,
+                          top: 8,
+                          // Extra space so reactions don't cover text
+                          bottom: hasReactions ? 18 : 8,
+                        ),
+                        constraints: BoxConstraints(
+                          maxWidth: MediaQuery.of(context).size.width * 0.72,
+                        ),
+                        decoration: BoxDecoration(
+                          color: isMe
+                              ? const Color(0xFF2A5C3F)
+                              : const Color(0xFF1E1E1E),
+                          borderRadius: BorderRadius.only(
+                            topLeft: const Radius.circular(16),
+                            topRight: const Radius.circular(16),
+                            bottomLeft: Radius.circular(isMe ? 16 : 4),
+                            bottomRight: Radius.circular(isMe ? 4 : 16),
+                          ),
+                        ),
+                        child: _buildContent(),
                       ),
-                    ),
-                    child: _buildContent(),
+                      if (hasReactions)
+                        Positioned(
+                          bottom: -10,
+                          right: isMe ? 8 : null,
+                          left: isMe ? null : 8,
+                          child: _ReactionsRow(
+                            reactions: message.reactions,
+                            currentUserId: currentUserId,
+                            onTap: (emoji) => onReact(message, emoji),
+                          ),
+                        ),
+                    ],
                   ),
-                  if (message.reactions.isNotEmpty)
-                    _ReactionsRow(
-                      reactions: message.reactions,
-                      currentUserId: currentUserId,
-                      onTap: (emoji) => onReact(message, emoji),
-                    ),
-                  const SizedBox(height: 2),
+                  SizedBox(height: hasReactions ? 14 : 2),
                   Text(
                     _formatTime(message.createdAt),
-                    style: const TextStyle(
-                        color: Colors.white38, fontSize: 10),
+                    style: const TextStyle(color: Colors.white38, fontSize: 10),
                   ),
                 ],
               ),
@@ -86,28 +105,30 @@ class MessageBubble extends StatelessWidget {
       return const Text(
         'Bu mesaj silindi',
         style: TextStyle(
-            color: Colors.white38,
-            fontStyle: FontStyle.italic,
-            fontSize: 14),
+            color: Colors.white38, fontStyle: FontStyle.italic, fontSize: 14),
       );
     }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (message.replyTo != null)
+        if (replyToMessage != null)
           Container(
             margin: const EdgeInsets.only(bottom: 6),
-            padding: const EdgeInsets.all(8),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
             decoration: BoxDecoration(
               color: Colors.black26,
               borderRadius: BorderRadius.circular(8),
               border: const Border(
                   left: BorderSide(color: Color(0xFF4CAF50), width: 3)),
             ),
-            child: const Text(
-              'Yanıtlanan mesaj',
-              style: TextStyle(color: Colors.white54, fontSize: 12),
+            child: Text(
+              replyToMessage!.isDeleted
+                  ? 'Bu mesaj silindi'
+                  : (replyToMessage!.content ?? ''),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(color: Colors.white60, fontSize: 12),
             ),
           ),
         if (message.type == MessageType.text)
@@ -180,9 +201,6 @@ class MessageBubble extends StatelessWidget {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Emoji picker shown in the bottom sheet
-// ---------------------------------------------------------------------------
 class _EmojiPicker extends StatelessWidget {
   final List<MessageReaction> currentReactions;
   final String currentUserId;
@@ -196,10 +214,8 @@ class _EmojiPicker extends StatelessWidget {
 
   static const _emojis = ['👍', '❤️', '😂', '😮', '😢', '🔥'];
 
-  bool _iSelected(String emoji) {
-    return currentReactions
-        .any((r) => r.emoji == emoji && r.userIds.contains(currentUserId));
-  }
+  bool _isSelected(String emoji) => currentReactions
+      .any((r) => r.emoji == emoji && r.userIds.contains(currentUserId));
 
   @override
   Widget build(BuildContext context) {
@@ -208,7 +224,7 @@ class _EmojiPicker extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: _emojis.map((e) {
-          final selected = _iSelected(e);
+          final selected = _isSelected(e);
           return GestureDetector(
             onTap: () => onSelect(e),
             child: AnimatedContainer(
@@ -235,9 +251,6 @@ class _EmojiPicker extends StatelessWidget {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Reaction chips shown below the message bubble
-// ---------------------------------------------------------------------------
 class _ReactionsRow extends StatelessWidget {
   final List<MessageReaction> reactions;
   final String currentUserId;
@@ -251,42 +264,38 @@ class _ReactionsRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 4),
-      child: Wrap(
-        spacing: 4,
-        runSpacing: 4,
-        children: reactions.map((r) {
-          final iReacted = r.userIds.contains(currentUserId);
-          return GestureDetector(
-            onTap: () => onTap(r.emoji),
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 150),
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-              decoration: BoxDecoration(
+    return Wrap(
+      spacing: 4,
+      runSpacing: 4,
+      children: reactions.map((r) {
+        final iReacted = r.userIds.contains(currentUserId);
+        return GestureDetector(
+          onTap: () => onTap(r.emoji),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 150),
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            decoration: BoxDecoration(
+              color: iReacted
+                  ? const Color(0xFF4CAF50).withValues(alpha: 0.2)
+                  : const Color(0xFF2A2A2A),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
                 color: iReacted
-                    ? const Color(0xFF4CAF50).withValues(alpha: 0.2)
-                    : const Color(0xFF2A2A2A),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: iReacted
-                      ? const Color(0xFF4CAF50)
-                      : Colors.transparent,
-                  width: 1,
-                ),
-              ),
-              child: Text(
-                '${r.emoji} ${r.userIds.length}',
-                style: TextStyle(
-                  fontSize: 13,
-                  color: iReacted ? Colors.white : Colors.white70,
-                ),
+                    ? const Color(0xFF4CAF50)
+                    : const Color(0xFF3A3A3A),
+                width: 1,
               ),
             ),
-          );
-        }).toList(),
-      ),
+            child: Text(
+              '${r.emoji} ${r.userIds.length}',
+              style: TextStyle(
+                fontSize: 12,
+                color: iReacted ? Colors.white : Colors.white70,
+              ),
+            ),
+          ),
+        );
+      }).toList(),
     );
   }
 }
