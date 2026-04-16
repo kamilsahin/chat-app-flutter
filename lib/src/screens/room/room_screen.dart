@@ -144,11 +144,12 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
                 itemCount: messages.length,
                 itemBuilder: (context, i) {
                   final msg = messages[i];
-                  final isMe = msg.senderId ==
-                      ref.read(chatConfigProvider).jwtToken;
+                  final userId = ref.read(chatConfigProvider).jwtToken;
+                  final isMe = msg.senderId == userId;
                   return MessageBubble(
                     message: msg,
                     isMe: isMe,
+                    currentUserId: userId,
                     onReply: (m) => setState(() => _replyingTo = m),
                     onReact: (m, emoji) => ref
                         .read(stompServiceProvider)

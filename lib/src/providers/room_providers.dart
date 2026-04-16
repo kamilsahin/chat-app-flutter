@@ -24,8 +24,16 @@ class RoomListNotifier extends AsyncNotifier<List<Room>> {
 
   void updateLastMessage(String roomId, Message message) {
     state.whenData((rooms) {
+      final room = rooms.firstWhere((r) => r.id == roomId,
+          orElse: () => rooms.first);
+      // If the incoming message already exists in the list it's a reaction/edit
+      // update — don't bump the unread counter or change the last-message text.
+      final isUpdate = room.lastMessageAt != null &&
+          !message.createdAt.isAfter(room.lastMessageAt!);
+
       state = AsyncData(rooms.map((r) {
         if (r.id != roomId) return r;
+        if (isUpdate) return r; // reaction/edit: nothing changes in the tile
         return r.copyWith(
           lastMessage: message.isDeleted ? 'Mesaj silindi' : message.content,
           lastMessageAt: message.createdAt,
@@ -63,7 +71,17 @@ class MessageListNotifier
 
   void addMessage(Message message) {
     state.whenData((messages) {
-      state = AsyncData([message, ...messages]);
+      // Reaction/edit updates arrive on the same STOMP topic as new messages.
+      // If a message with this id already exists, update it in place instead
+      // of prepending a duplicate.
+      final idx = messages.indexWhere((m) => m.id == message.id);
+      if (idx != -1) {
+        final copy = List<Message>.from(messages);
+        copy[idx] = message;
+        state = AsyncData(copy);
+      } else {
+        state = AsyncData([message, ...messages]);
+      }
     });
   }
 
