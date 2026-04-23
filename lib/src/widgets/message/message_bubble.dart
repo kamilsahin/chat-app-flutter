@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import '../../models/message.dart';
 
@@ -160,7 +161,9 @@ class MessageBubbleState extends State<MessageBubble> {
               child: Text(
                 widget.replyToMessage!.isDeleted
                     ? 'Bu mesaj silindi'
-                    : (widget.replyToMessage!.content ?? ''),
+                    : widget.replyToMessage!.type == MessageType.image
+                        ? '📷 Fotoğraf'
+                        : (widget.replyToMessage!.content ?? ''),
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style:
@@ -176,9 +179,30 @@ class MessageBubbleState extends State<MessageBubble> {
           ),
         if (widget.message.type == MessageType.image &&
             widget.message.imageUrl != null)
-          ClipRRect(
-            borderRadius: BorderRadius.circular(8),
-            child: Image.network(widget.message.imageUrl!, width: 200),
+          GestureDetector(
+            onTap: () => _openFullScreen(context, widget.message.imageUrl!),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: CachedNetworkImage(
+                imageUrl: widget.message.imageUrl!,
+                width: 220,
+                fit: BoxFit.cover,
+                placeholder: (_, __) => const SizedBox(
+                  width: 220,
+                  height: 140,
+                  child: Center(
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                ),
+                errorWidget: (_, __, ___) => const SizedBox(
+                  width: 220,
+                  height: 80,
+                  child: Center(
+                    child: Icon(Icons.broken_image, color: Colors.white38, size: 32),
+                  ),
+                ),
+              ),
+            ),
           ),
         if (widget.message.isEdited)
           const Text(
@@ -231,6 +255,16 @@ class MessageBubbleState extends State<MessageBubble> {
             const SizedBox(height: 8),
           ],
         ),
+      ),
+    );
+  }
+
+  void _openFullScreen(BuildContext context, String imageUrl) {
+    Navigator.of(context).push(
+      PageRouteBuilder(
+        opaque: false,
+        barrierColor: Colors.black87,
+        pageBuilder: (_, __, ___) => _FullScreenImage(imageUrl: imageUrl),
       ),
     );
   }
@@ -336,6 +370,33 @@ class _ReactionsRow extends StatelessWidget {
           ),
         );
       }).toList(),
+    );
+  }
+}
+
+class _FullScreenImage extends StatelessWidget {
+  final String imageUrl;
+  const _FullScreenImage({required this.imageUrl});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () => Navigator.of(context).pop(),
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        body: Center(
+          child: InteractiveViewer(
+            child: CachedNetworkImage(
+              imageUrl: imageUrl,
+              fit: BoxFit.contain,
+              placeholder: (_, __) =>
+                  const CircularProgressIndicator(color: Colors.white),
+              errorWidget: (_, __, ___) =>
+                  const Icon(Icons.broken_image, color: Colors.white54, size: 64),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

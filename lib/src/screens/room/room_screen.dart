@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
 import '../../models/message.dart';
 import '../../providers/config_provider.dart';
 import '../../providers/room_providers.dart';
@@ -22,6 +23,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
   Message? _replyingTo;
   Timer? _typingTimer;
   bool _isTyping = false;
+  bool _uploading = false;
   bool _initialized = false;
   late ProviderContainer _container;
   late MessageCallback _onMessage;
@@ -103,6 +105,62 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
     if (_isTyping) {
       _isTyping = false;
       ref.read(stompServiceProvider).sendTyping(widget.roomId, false);
+    }
+  }
+
+  Future<void> _pickAndSendImage() async {
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      backgroundColor: const Color(0xFF1A1A1A),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 8),
+            Container(
+              width: 36, height: 4,
+              decoration: BoxDecoration(
+                color: Colors.white24,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library, color: Colors.white70),
+              title: const Text('Galeriden seç', style: TextStyle(color: Colors.white)),
+              onTap: () => Navigator.pop(context, ImageSource.gallery),
+            ),
+            ListTile(
+              leading: const Icon(Icons.camera_alt, color: Colors.white70),
+              title: const Text('Kamera', style: TextStyle(color: Colors.white)),
+              onTap: () => Navigator.pop(context, ImageSource.camera),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+
+    if (source == null) return;
+
+    final picker = ImagePicker();
+    final picked = await picker.pickImage(source: source, imageQuality: 80);
+    if (picked == null || !mounted) return;
+
+    setState(() => _uploading = true);
+    try {
+      await ref.read(apiServiceProvider).sendImageMessage(widget.roomId, picked.path);
+      // Message arrives via STOMP and is added by the subscription handler.
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Fotoğraf gönderilemedi')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _uploading = false);
     }
   }
 
@@ -222,6 +280,8 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
             controller: _controller,
             onChanged: _onTextChanged,
             onSend: _sendMessage,
+            onImageTap: _pickAndSendImage,
+            uploading: _uploading,
           ),
         ],
       ),
@@ -265,11 +325,15 @@ class _InputBar extends StatelessWidget {
   final TextEditingController controller;
   final ValueChanged<String> onChanged;
   final VoidCallback onSend;
+  final VoidCallback onImageTap;
+  final bool uploading;
 
   const _InputBar({
     required this.controller,
     required this.onChanged,
     required this.onSend,
+    required this.onImageTap,
+    required this.uploading,
   });
 
   @override
@@ -280,6 +344,10 @@ class _InputBar extends StatelessWidget {
       child: SafeArea(
         child: Row(
           children: [
+            IconButton(
+              icon: const Icon(Icons.image_outlined, color: Colors.white54),
+              onPressed: uploading ? null : onImageTap,
+            ),
             Expanded(
               child: TextField(
                 controller: controller,
@@ -304,10 +372,18 @@ class _InputBar extends StatelessWidget {
             const SizedBox(width: 8),
             CircleAvatar(
               backgroundColor: const Color(0xFF4CAF50),
-              child: IconButton(
-                icon: const Icon(Icons.send, color: Colors.white, size: 18),
-                onPressed: onSend,
-              ),
+              child: uploading
+                  ? const Padding(
+                      padding: EdgeInsets.all(10),
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : IconButton(
+                      icon: const Icon(Icons.send, color: Colors.white, size: 18),
+                      onPressed: onSend,
+                    ),
             ),
           ],
         ),

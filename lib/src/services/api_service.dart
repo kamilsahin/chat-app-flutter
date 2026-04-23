@@ -80,6 +80,17 @@ class ApiService {
     return ChatUser.fromJson(res.data);
   }
 
+  Future<Message> sendImageMessage(String roomId, String filePath) async {
+    final formData = FormData.fromMap({
+      'file': await MultipartFile.fromFile(filePath),
+    });
+    final res = await _dio.post(
+      '/api/rooms/$roomId/messages/image',
+      data: formData,
+    );
+    return Message.fromJson(res.data);
+  }
+
   // Mute
   /// [duration] — ISO-8601 string e.g. "PT1H", "PT8H", "P7D".
   /// Pass null for permanent (no expiry).
