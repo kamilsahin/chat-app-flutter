@@ -46,15 +46,14 @@ class RoomListNotifier extends AsyncNotifier<List<Room>> {
   }
 
   Future<void> muteRoom(String roomId, String userId, {String? duration}) async {
-    await ref.read(apiServiceProvider).muteRoom(roomId, duration: duration);
-    // Update local state immediately — no re-fetch needed.
     final mutedUntil = duration != null ? _parseUntil(duration) : null;
     _patchMember(roomId, userId, muted: true, mutedUntil: mutedUntil);
+    await ref.read(apiServiceProvider).muteRoom(roomId, duration: duration);
   }
 
   Future<void> unmuteRoom(String roomId, String userId) async {
-    await ref.read(apiServiceProvider).unmuteRoom(roomId);
     _patchMember(roomId, userId, muted: false, mutedUntil: null);
+    await ref.read(apiServiceProvider).unmuteRoom(roomId);
   }
 
   void _patchMember(String roomId, String userId, {required bool muted, DateTime? mutedUntil}) {
