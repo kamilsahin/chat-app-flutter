@@ -35,6 +35,7 @@ dependencies:
 
   chat_app_flutter:
     path: ../
+  dart_jsonwebtoken: ^2.8.0
 
 dev_dependencies:
   flutter_test:

@@ -4,9 +4,14 @@ class ChatConfig {
   final String serverUrl;
   final String jwtToken;
 
+  /// FCM token from firebase_messaging. If provided, the package registers
+  /// it with the backend so push notifications can be delivered.
+  final String? fcmToken;
+
   const ChatConfig({
     required this.serverUrl,
     required this.jwtToken,
+    this.fcmToken,
   });
 
   String get wsUrl => serverUrl.replaceFirst(RegExp(r'^http'), 'ws');
@@ -22,7 +27,7 @@ class ChatConfig {
       final payload = base64Url.normalize(parts[1]);
       final decoded = utf8.decode(base64Url.decode(payload));
       final map = jsonDecode(decoded) as Map<String, dynamic>;
-      return map['sub'] as String? ?? jwtToken;
+      return map['sub'] as String? ?? map['id'] as String? ?? jwtToken;
     } catch (_) {
       return jwtToken;
     }

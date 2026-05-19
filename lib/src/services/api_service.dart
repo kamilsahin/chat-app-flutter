@@ -17,8 +17,9 @@ class ApiService {
   }
 
   // Rooms
-  Future<List<Room>> getRooms() async {
-    final res = await _dio.get('/api/rooms');
+  Future<List<Room>> getRooms({String? type}) async {
+    final res = await _dio.get('/api/rooms',
+        queryParameters: type != null ? {'type': type} : null);
     return (res.data as List).map((r) => Room.fromJson(r)).toList();
   }
 
@@ -89,6 +90,10 @@ class ApiService {
       data: formData,
     );
     return Message.fromJson(res.data);
+  }
+
+  Future<void> updateFcmToken(String token) async {
+    await _dio.put('/api/users/me/fcm-token', data: {'token': token});
   }
 
   // Mute

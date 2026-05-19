@@ -1,6 +1,15 @@
+import 'package:chat_app_flutter/chat_app_flutter.dart';
+import 'package:dart_jsonwebtoken/dart_jsonwebtoken.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:chat_app_flutter/chat_app_flutter.dart';
+
+// ── Sabitleri buraya yaz ───────────────────────────────────────────────────
+// Must match JWT_SECRET in chat-app backend .env
+const _chatSecret = 'actizone-chat-secret-2026-minimum-32-chars-ok';
+
+// Android emulator → 10.0.2.2, gerçek cihaz → bilgisayarın local IP'si
+const _defaultServer = 'http://10.0.2.2:8081';
+// ──────────────────────────────────────────────────────────────────────────
 
 void main() {
   runApp(const ProviderScope(child: ExampleApp()));
@@ -12,7 +21,7 @@ class ExampleApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Chat Example',
+      title: 'Chat Test',
       theme: ThemeData.dark(),
       home: const LoginScreen(),
       debugShowCheckedModeBanner: false,
@@ -20,9 +29,6 @@ class ExampleApp extends StatelessWidget {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Login Screen — JWT token ve server URL gir, chat'e bağlan
-// ---------------------------------------------------------------------------
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
 
@@ -31,24 +37,30 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final _serverController = TextEditingController(
-    // Android emulator: 10.0.2.2 → host machine's localhost
-    // Real device: use your computer's local IP (e.g. 192.168.1.x)
-    text: 'http://10.0.2.2:8081',
-  );
-  final _tokenController = TextEditingController();
+  final _serverCtrl = TextEditingController(text: _defaultServer);
+  final _userIdCtrl = TextEditingController();
+
+  String _generateToken(String userId) {
+    final jwt = JWT({'sub': userId});
+    return jwt.sign(
+      SecretKey(_chatSecret),
+      algorithm: JWTAlgorithm.HS256,
+      expiresIn: const Duration(days: 30),
+    );
+  }
 
   void _connect() {
-    final server = _serverController.text.trim();
-    final token = _tokenController.text.trim();
+    final server = _serverCtrl.text.trim();
+    final userId = _userIdCtrl.text.trim();
 
-    if (server.isEmpty || token.isEmpty) {
+    if (server.isEmpty || userId.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Server URL ve token zorunlu')),
+        const SnackBar(content: Text('Server URL ve kullanıcı ID zorunlu')),
       );
       return;
     }
 
+    final token = _generateToken(userId);
     final config = ChatConfig(serverUrl: server, jwtToken: token);
 
     Navigator.pushReplacement(
@@ -77,25 +89,24 @@ class _LoginScreenState extends State<LoginScreen> {
                   size: 64, color: Color(0xFF4CAF50)),
               const SizedBox(height: 24),
               const Text(
-                'Chat App',
+                'Chat Test',
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                  fontSize: 28,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
-                ),
+                    fontSize: 28,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white),
               ),
               const SizedBox(height: 40),
               _label('Server URL'),
               const SizedBox(height: 6),
-              _field(_serverController, 'http://localhost:8081'),
+              _field(_serverCtrl, _defaultServer),
               const SizedBox(height: 16),
-              _label('JWT Token'),
+              _label('Kullanıcı ID'),
               const SizedBox(height: 6),
-              _field(_tokenController, 'jwt.io\'dan üret', maxLines: 4),
-              const SizedBox(height: 8),
+              _field(_userIdCtrl, '4744'),
+              const SizedBox(height: 4),
               const Text(
-                'jwt.io → HS256 → sub: "user1" → secret: dev-secret-key-for-chat-app-minimum-32chars',
+                'JWT otomatik üretilir — secret: actizone-chat-secret-2026-...',
                 style: TextStyle(color: Colors.white38, fontSize: 11),
               ),
               const SizedBox(height: 32),
@@ -107,10 +118,9 @@ class _LoginScreenState extends State<LoginScreen> {
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12)),
                 ),
-                child: const Text(
-                  'Bağlan',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-                ),
+                child: const Text('Bağlan',
+                    style:
+                        TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
               ),
             ],
           ),
@@ -119,18 +129,12 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  Widget _label(String text) => Text(
-        text,
-        style: const TextStyle(
-            color: Colors.white70,
-            fontSize: 13,
-            fontWeight: FontWeight.w500),
-      );
+  Widget _label(String text) => Text(text,
+      style: const TextStyle(
+          color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w500));
 
-  Widget _field(TextEditingController c, String hint, {int maxLines = 1}) =>
-      TextField(
+  Widget _field(TextEditingController c, String hint) => TextField(
         controller: c,
-        maxLines: maxLines,
         style: const TextStyle(color: Colors.white, fontSize: 13),
         decoration: InputDecoration(
           hintText: hint,
@@ -138,18 +142,14 @@ class _LoginScreenState extends State<LoginScreen> {
           filled: true,
           fillColor: const Color(0xFF1E1E1E),
           border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(10),
-            borderSide: BorderSide.none,
-          ),
+              borderRadius: BorderRadius.circular(10),
+              borderSide: BorderSide.none),
           contentPadding:
               const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         ),
       );
 }
 
-// ---------------------------------------------------------------------------
-// Chat Home — RoomListScreen'i ProviderScope içinde çalıştırır
-// ---------------------------------------------------------------------------
 class ChatHome extends ConsumerWidget {
   const ChatHome({super.key});
 

@@ -57,6 +57,8 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
           onMessage: _onMessage,
           onTyping: _onTyping,
         );
+        _container.read(activeRoomProvider.notifier).state = widget.roomId;
+        _container.read(roomListProvider.notifier).clearUnread(widget.roomId);
       }
     });
   }
@@ -71,6 +73,8 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
       onMessage: _onMessage,
       onTyping: _onTyping,
     );
+    _container.read(activeRoomProvider.notifier).state = null;
+    _container.read(roomListProvider.notifier).clearUnread(widget.roomId);
     _controller.dispose();
     _scrollController.dispose();
     _typingTimer?.cancel();
@@ -90,6 +94,104 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
     _controller.clear();
     setState(() => _replyingTo = null);
     _stopTyping();
+    _scrollToBottom();
+  }
+
+  Future<void> _editMessage(Message message) async {
+    final controller = TextEditingController(text: message.content);
+    final newContent = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1A1A1A),
+        title: const Text('Mesajı Düzenle',
+            style: TextStyle(color: Colors.white)),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          style: const TextStyle(color: Colors.white),
+          maxLines: null,
+          decoration: InputDecoration(
+            filled: true,
+            fillColor: const Color(0xFF2A2A2A),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide.none,
+            ),
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('İptal', style: TextStyle(color: Colors.white54)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+            child: const Text('Kaydet',
+                style: TextStyle(color: Color(0xFF4CAF50))),
+          ),
+        ],
+      ),
+    );
+    if (newContent == null || newContent.isEmpty || newContent == message.content) return;
+    try {
+      final updated =
+          await ref.read(apiServiceProvider).editMessage(message.id, newContent);
+      ref.read(messageListProvider(widget.roomId).notifier).updateMessage(updated);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Mesaj düzenlenemedi')),
+        );
+      }
+    }
+  }
+
+  Future<void> _deleteMessage(Message message) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1A1A1A),
+        title: const Text('Mesajı Sil',
+            style: TextStyle(color: Colors.white)),
+        content: const Text('Bu mesajı silmek istiyor musunuz?',
+            style: TextStyle(color: Colors.white70)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('İptal', style: TextStyle(color: Colors.white54)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Sil',
+                style: TextStyle(color: Colors.redAccent)),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+    try {
+      final updated =
+          await ref.read(apiServiceProvider).deleteMessage(message.id);
+      ref.read(messageListProvider(widget.roomId).notifier).updateMessage(updated);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Mesaj silinemedi')),
+        );
+      }
+    }
+  }
+
+  void _scrollToBottom() {
+    if (_scrollController.hasClients) {
+      _scrollController.animateTo(
+        0,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOut,
+      );
+    }
   }
 
   void _onTextChanged(String text) {
@@ -151,8 +253,11 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
 
     setState(() => _uploading = true);
     try {
-      await ref.read(apiServiceProvider).sendImageMessage(widget.roomId, picked.path);
-      // Message arrives via STOMP and is added by the subscription handler.
+      final message = await ref.read(apiServiceProvider).sendImageMessage(widget.roomId, picked.path);
+      // Add directly from REST response — don't wait for STOMP broadcast.
+      // addMessage does upsert so no duplicate if STOMP also delivers it.
+      _container.read(messageListProvider(widget.roomId).notifier).addMessage(message);
+      _scrollToBottom();
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -247,7 +352,9 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
                 itemCount: messages.length,
                 itemBuilder: (context, i) {
                   final msg = messages[i];
-                  final userId = ref.read(chatConfigProvider).userId;
+                  final config = ref.read(chatConfigProvider);
+                  final userId = config.userId;
+                  final serverUrl = config.apiUrl;
                   final isMe = msg.senderId == userId;
                   final replyTo = msg.replyTo != null
                       ? messages.where((m) => m.id == msg.replyTo).firstOrNull
@@ -261,12 +368,15 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
                     message: msg,
                     isMe: isMe,
                     currentUserId: userId,
+                    serverUrl: serverUrl,
                     replyToMessage: replyTo,
                     onReply: (m) => setState(() => _replyingTo = m),
                     onReact: (m, emoji) => ref
                         .read(stompServiceProvider)
                         .sendReaction(widget.roomId, m.id, emoji),
                     onReplyTap: _scrollToMessage,
+                    onEdit: _editMessage,
+                    onDelete: _deleteMessage,
                   );
                 },
               ),

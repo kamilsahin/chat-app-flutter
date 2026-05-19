@@ -57,7 +57,8 @@ class _RoomListScreenState extends ConsumerState<RoomListScreen> {
     // Only update the room list tile — message list is managed by RoomScreen.
     void onMsg(Message message) {
       if (_disposed) return;
-      _container.read(roomListProvider.notifier).updateLastMessage(roomId, message);
+      final currentUserId = _container.read(chatConfigProvider).userId;
+      _container.read(roomListProvider.notifier).updateLastMessage(roomId, message, currentUserId);
     }
     _msgHandlers[roomId] = onMsg;
 

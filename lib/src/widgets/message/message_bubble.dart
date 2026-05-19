@@ -1,5 +1,6 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../models/message.dart';
 
 class MessageBubble extends StatefulWidget {
@@ -10,6 +11,9 @@ class MessageBubble extends StatefulWidget {
   final void Function(Message) onReply;
   final void Function(Message, String) onReact;
   final void Function(String messageId)? onReplyTap;
+  final void Function(Message)? onEdit;
+  final void Function(Message)? onDelete;
+  final String serverUrl;
 
   const MessageBubble({
     super.key,
@@ -20,6 +24,9 @@ class MessageBubble extends StatefulWidget {
     required this.onReply,
     required this.onReact,
     this.onReplyTap,
+    this.onEdit,
+    this.onDelete,
+    this.serverUrl = '',
   });
 
   @override
@@ -180,11 +187,11 @@ class MessageBubbleState extends State<MessageBubble> {
         if (widget.message.type == MessageType.image &&
             widget.message.imageUrl != null)
           GestureDetector(
-            onTap: () => _openFullScreen(context, widget.message.imageUrl!),
+            onTap: () => _openFullScreen(context, _resolveUrl(widget.message.imageUrl!)),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(8),
               child: CachedNetworkImage(
-                imageUrl: widget.message.imageUrl!,
+                imageUrl: _resolveUrl(widget.message.imageUrl!),
                 width: 220,
                 fit: BoxFit.cover,
                 placeholder: (_, __) => const SizedBox(
@@ -252,12 +259,50 @@ class MessageBubbleState extends State<MessageBubble> {
                 widget.onReply(widget.message);
               },
             ),
+            if (widget.message.content != null && !widget.message.isDeleted)
+              ListTile(
+                leading: const Icon(Icons.copy, color: Colors.white70),
+                title: const Text('Kopyala',
+                    style: TextStyle(color: Colors.white)),
+                onTap: () {
+                  Navigator.pop(context);
+                  Clipboard.setData(ClipboardData(text: widget.message.content!));
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Mesaj kopyalandı'),
+                      duration: Duration(seconds: 1),
+                    ),
+                  );
+                },
+              ),
+            if (widget.isMe && !widget.message.isDeleted &&
+                widget.message.type == MessageType.text)
+              ListTile(
+                leading: const Icon(Icons.edit_outlined, color: Colors.white70),
+                title: const Text('Düzenle', style: TextStyle(color: Colors.white)),
+                onTap: () {
+                  Navigator.pop(context);
+                  widget.onEdit?.call(widget.message);
+                },
+              ),
+            if (widget.isMe && !widget.message.isDeleted)
+              ListTile(
+                leading: const Icon(Icons.delete_outline, color: Colors.redAccent),
+                title: const Text('Sil', style: TextStyle(color: Colors.redAccent)),
+                onTap: () {
+                  Navigator.pop(context);
+                  widget.onDelete?.call(widget.message);
+                },
+              ),
             const SizedBox(height: 8),
           ],
         ),
       ),
     );
   }
+
+  String _resolveUrl(String url) =>
+      url.startsWith('http') ? url : '${widget.serverUrl}$url';
 
   void _openFullScreen(BuildContext context, String imageUrl) {
     Navigator.of(context).push(

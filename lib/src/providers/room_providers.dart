@@ -3,6 +3,10 @@ import '../models/room.dart';
 import '../models/message.dart';
 import 'service_providers.dart';
 
+// Currently open room — set by RoomScreen so unread count is not incremented
+// while the user is actively viewing a room.
+final activeRoomProvider = StateProvider<String?>((ref) => null);
+
 // Room list
 final roomListProvider = AsyncNotifierProvider<RoomListNotifier, List<Room>>(
   RoomListNotifier.new,
@@ -22,22 +26,22 @@ class RoomListNotifier extends AsyncNotifier<List<Room>> {
     );
   }
 
-  void updateLastMessage(String roomId, Message message) {
+  void updateLastMessage(String roomId, Message message, String currentUserId) {
     state.whenData((rooms) {
       final room = rooms.firstWhere((r) => r.id == roomId,
           orElse: () => rooms.first);
-      // If the incoming message already exists in the list it's a reaction/edit
-      // update — don't bump the unread counter or change the last-message text.
       final isUpdate = room.lastMessageAt != null &&
           !message.createdAt.isAfter(room.lastMessageAt!);
+      final isOwn = message.senderId == currentUserId;
+      final isActive = ref.read(activeRoomProvider) == roomId;
 
       state = AsyncData(rooms.map((r) {
         if (r.id != roomId) return r;
-        if (isUpdate) return r; // reaction/edit: nothing changes in the tile
+        if (isUpdate) return r;
         return r.copyWith(
           lastMessage: message.isDeleted ? 'Mesaj silindi' : message.content,
           lastMessageAt: message.createdAt,
-          unreadCount: r.unreadCount + 1,
+          unreadCount: (isOwn || isActive) ? r.unreadCount : r.unreadCount + 1,
         );
       }).toList()
         ..sort((a, b) => (b.lastMessageAt ?? b.createdAt)

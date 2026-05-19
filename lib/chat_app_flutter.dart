@@ -9,12 +9,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'src/config/chat_config.dart';
 import 'src/providers/config_provider.dart';
+import 'src/providers/service_providers.dart';
 
 class ChatApp {
   ChatApp._();
 
   /// Host app calls this once after login.
-  /// Wraps the subtree with required providers.
+  /// Pass [ChatConfig.fcmToken] (from firebase_messaging) to enable push
+  /// notifications — the package registers the token with the backend.
   static Widget initialize({
     required ChatConfig config,
     required Widget child,
@@ -23,7 +25,31 @@ class ChatApp {
       overrides: [
         chatConfigProvider.overrideWithValue(config),
       ],
-      child: child,
+      child: _ChatInitWidget(child: child),
     );
   }
+}
+
+class _ChatInitWidget extends ConsumerStatefulWidget {
+  final Widget child;
+  const _ChatInitWidget({required this.child});
+
+  @override
+  ConsumerState<_ChatInitWidget> createState() => _ChatInitWidgetState();
+}
+
+class _ChatInitWidgetState extends ConsumerState<_ChatInitWidget> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final config = ref.read(chatConfigProvider);
+      if (config.fcmToken != null) {
+        ref.read(apiServiceProvider).updateFcmToken(config.fcmToken!).ignore();
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
 }

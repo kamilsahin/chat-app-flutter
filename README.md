@@ -22,10 +22,21 @@ A Flutter package that embeds a real-time chat UI into any existing app. Connect
 - Tap the quoted block to scroll to and highlight the original message
 
 ### Emoji Reactions
-- Long-press a bubble to open emoji picker (6 emojis: 👍 ❤️ 😂 😮 😢 🙏)
+- Long-press a bubble to open emoji picker (6 emojis: 👍 ❤️ 😂 😮 😢 🔥)
 - Already-selected emoji highlighted with a green ring
 - Reactions shown as tappable chips at the bottom-right of the bubble
 - Own reaction highlighted with a green border on the chip
+
+### Photo Sharing
+- Send photos from gallery or camera via the image button in the input bar
+- Images displayed as inline thumbnails inside the bubble
+- Tap to open full-screen viewer with pinch-to-zoom (`InteractiveViewer`)
+
+### Message Actions (long-press)
+- **Copy** — copies text content to clipboard
+- **Reply** — opens the reply bar pre-filled with the original message
+- **Edit** — opens an edit dialog (own text messages only); broadcasts update to all participants
+- **Delete** — soft-deletes with confirmation; replaced by "Bu mesaj silindi" placeholder for everyone
 
 ### Mute / Unmute
 - Long-press a room tile to open the mute sheet
@@ -33,7 +44,21 @@ A Flutter package that embeds a real-time chat UI into any existing app. Connect
 - Muted rooms show a bell-off icon next to the name
 - Optimistic local state update — no re-fetch needed
 
+### Unread Count
+- Badge cleared automatically when entering or leaving a room
+- Own sent messages never increment the unread counter
+- Messages received while a room is open do not increment the counter
+
+### Push Notifications (FCM)
+- Opt-in: pass an `fcmToken` in `ChatConfig` and the package registers it automatically
+- Your app handles Firebase initialization and token retrieval (`firebase_messaging`); the package has no Firebase dependency
+- Backend sends FCM push when a new message arrives (text or photo)
+- Skips notification for the sender and for muted members (respects mute duration)
+- Stale/unregistered tokens are cleaned up automatically
+- Enable on the backend: set `chat.notifications.enabled=true` and `chat.notifications.fcm.credentials-file` to your service-account JSON path
+
 ### Other
+- Auto-scroll to latest message on send
 - Typing indicators in room app bar
 - JWT-based auth — your app issues the token, this package just uses it
 - Easily embedded as a path or git dependency
@@ -45,7 +70,7 @@ A Flutter package that embeds a real-time chat UI into any existing app. Connect
 Clone and run the [chat-app](https://github.com/kamilsahin/chat-app) Spring Boot backend. Copy `.env.example` to `.env` and set your values:
 
 ```
-CHAT_JWT_SECRET=dev-secret-key-for-chat-app-minimum-32chars
+CHAT_JWT_SECRET=SecretKeyToGenJWTs
 CHAT_INTERNAL_SECRET=dev-internal-secret
 ```
 
