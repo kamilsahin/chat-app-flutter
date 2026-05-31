@@ -1,3 +1,8 @@
+## 0.1.1
+
+- Fix: provider mutation in `dispose()` caused "Tried to modify a provider while the widget tree was building" error — deferred via `Future.microtask`
+- Fix: typing indicator timer firing after widget disposal caused "Cannot use ref after widget was disposed" error — switched to `_container` reference
+
 ## 0.1.0
 
 Initial public release.

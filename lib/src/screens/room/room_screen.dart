@@ -106,10 +106,14 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
           onMessage: _onMessage,
           onTyping: _onTyping,
         );
-    _container.read(activeRoomProvider.notifier).state = null;
-    _container
-        .read(roomListProvider(widget.typeFilter).notifier)
-        .clearUnread(widget.roomId);
+    // Delay provider mutations — dispose() is called during tree finalization
+    // (lockState), and Riverpod forbids state changes in that window.
+    Future.microtask(() {
+      _container.read(activeRoomProvider.notifier).state = null;
+      _container
+          .read(roomListProvider(widget.typeFilter).notifier)
+          .clearUnread(widget.roomId);
+    });
     _controller.dispose();
     _scrollController.dispose();
     _typingTimer?.cancel();
@@ -254,7 +258,9 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
   void _stopTyping() {
     if (_isTyping) {
       _isTyping = false;
-      ref.read(stompServiceProvider).sendTyping(widget.roomId, false);
+      // Use _container instead of ref — this may be called from a Timer
+      // callback after the widget is disposed, when ref is no longer valid.
+      _container.read(stompServiceProvider).sendTyping(widget.roomId, false);
     }
   }
 
