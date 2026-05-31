@@ -1,3 +1,8 @@
+## 0.1.2
+
+- Fix: "Tried to read a provider from a ProviderContainer that was already disposed" — `_container` nulled before microtask fires, callbacks now null-safe
+- Fix: `muteRoom` sent ISO-8601 strings but backend expects enum values (`HOURS_1`, `HOURS_8`, `WEEK_1`, `INDEFINITE`) — mapping added in `ApiService`
+
 ## 0.1.1
 
 - Fix: provider mutation in `dispose()` caused "Tried to modify a provider while the widget tree was building" error — deferred via `Future.microtask`

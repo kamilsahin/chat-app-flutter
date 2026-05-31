@@ -45,7 +45,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
   bool _isTyping = false;
   bool _uploading = false;
   bool _initialized = false;
-  late ProviderContainer _container;
+  ProviderContainer? _container;
   late MessageCallback _onMessage;
   late TypingCallback _onTyping;
 
@@ -63,12 +63,12 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
 
     _onMessage = (message) {
       _container
-          .read(messageListProvider(widget.roomId).notifier)
+          ?.read(messageListProvider(widget.roomId).notifier)
           .addMessage(message);
     };
     _onTyping = (userId, typing) {
       _container
-          .read(typingProvider(widget.roomId).notifier)
+          ?.read(typingProvider(widget.roomId).notifier)
           .setTyping(userId, typing);
     };
 
@@ -77,19 +77,19 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         _container
-            .read(stompServiceProvider)
+            ?.read(stompServiceProvider)
             .subscribeToRoom(
               widget.roomId,
               onMessage: _onMessage,
               onTyping: _onTyping,
             );
-        _container.read(activeRoomProvider.notifier).state = widget.roomId;
+        _container?.read(activeRoomProvider.notifier).state = widget.roomId;
         _container
-            .read(roomListProvider(widget.typeFilter).notifier)
+            ?.read(roomListProvider(widget.typeFilter).notifier)
             .clearUnread(widget.roomId);
         // Mark all messages as read on the backend so the next room-list
         // fetch reflects the correct unread count.
-        _container.read(apiServiceProvider).markRoomAsRead(widget.roomId).ignore();
+        _container?.read(apiServiceProvider).markRoomAsRead(widget.roomId).ignore();
       }
     });
   }
@@ -100,7 +100,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
     // can fire between this removal and super.dispose() marking the element
     // defunct — so addMessage will never be called on a defunct element.
     _container
-        .read(stompServiceProvider)
+        ?.read(stompServiceProvider)
         .unsubscribeFromRoom(
           widget.roomId,
           onMessage: _onMessage,
@@ -108,10 +108,13 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
         );
     // Delay provider mutations — dispose() is called during tree finalization
     // (lockState), and Riverpod forbids state changes in that window.
+    // Capture before nulling so the microtask closure can use it safely.
+    final container = _container;
+    _container = null;
     Future.microtask(() {
-      _container.read(activeRoomProvider.notifier).state = null;
-      _container
-          .read(roomListProvider(widget.typeFilter).notifier)
+      container?.read(activeRoomProvider.notifier).state = null;
+      container
+          ?.read(roomListProvider(widget.typeFilter).notifier)
           .clearUnread(widget.roomId);
     });
     _controller.dispose();
@@ -260,7 +263,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
       _isTyping = false;
       // Use _container instead of ref — this may be called from a Timer
       // callback after the widget is disposed, when ref is no longer valid.
-      _container.read(stompServiceProvider).sendTyping(widget.roomId, false);
+      _container?.read(stompServiceProvider).sendTyping(widget.roomId, false);
     }
   }
 

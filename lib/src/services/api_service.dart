@@ -155,9 +155,16 @@ class ApiService {
   /// [duration] — ISO-8601 string e.g. "PT1H", "PT8H", "P7D".
   /// Pass null for permanent (no expiry).
   Future<void> muteRoom(String roomId, {String? duration}) async {
+    // Backend expects MuteDuration enum: HOURS_1, HOURS_8, WEEK_1, INDEFINITE
+    final enumValue = switch (duration) {
+      'PT1H' => 'HOURS_1',
+      'PT8H' => 'HOURS_8',
+      'P7D'  => 'WEEK_1',
+      _      => 'INDEFINITE',
+    };
     await _dio.put(
       '/api/rooms/$roomId/mute',
-      data: duration != null ? {'duration': duration} : {},
+      data: {'duration': enumValue},
     );
   }
 
