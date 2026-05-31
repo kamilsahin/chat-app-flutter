@@ -1,3 +1,7 @@
+## 0.1.3
+
+- Fix: remaining `.read()` call on nullable `_container` in image send flow
+
 ## 0.1.2
 
 - Fix: "Tried to read a provider from a ProviderContainer that was already disposed" — `_container` nulled before microtask fires, callbacks now null-safe

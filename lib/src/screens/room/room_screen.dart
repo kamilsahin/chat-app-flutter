@@ -324,7 +324,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
       // Add directly from REST response — don't wait for STOMP broadcast.
       // addMessage does upsert so no duplicate if STOMP also delivers it.
       _container
-          .read(messageListProvider(widget.roomId).notifier)
+          ?.read(messageListProvider(widget.roomId).notifier)
           .addMessage(message);
       _scrollToBottom();
     } catch (e) {
