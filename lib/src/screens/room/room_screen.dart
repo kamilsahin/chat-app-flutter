@@ -1,8 +1,11 @@
 import 'dart:async';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
+import '../../config/chat_theme.dart';
 import '../../models/message.dart';
+import '../../models/room.dart';
 import '../../providers/config_provider.dart';
 import '../../providers/room_providers.dart';
 import '../../providers/service_providers.dart';
@@ -11,7 +14,24 @@ import '../../widgets/message/message_bubble.dart';
 
 class RoomScreen extends ConsumerStatefulWidget {
   final String roomId;
-  const RoomScreen({super.key, required this.roomId});
+  final String? title;
+  final RoomType? typeFilter;
+
+  /// Type of the room — used to hide sender avatars in direct chats and to
+  /// show the other person's photo in the app bar.
+  final RoomType? roomType;
+
+  /// Avatar URL of the room (other person's photo for direct, group photo for groups).
+  final String? avatarUrl;
+
+  const RoomScreen({
+    super.key,
+    required this.roomId,
+    this.title,
+    this.typeFilter,
+    this.roomType,
+    this.avatarUrl,
+  });
 
   @override
   ConsumerState<RoomScreen> createState() => _RoomScreenState();
@@ -42,23 +62,34 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
     _container = ProviderScope.containerOf(context);
 
     _onMessage = (message) {
-      _container.read(messageListProvider(widget.roomId).notifier).addMessage(message);
+      _container
+          .read(messageListProvider(widget.roomId).notifier)
+          .addMessage(message);
     };
     _onTyping = (userId, typing) {
-      _container.read(typingProvider(widget.roomId).notifier).setTyping(userId, typing);
+      _container
+          .read(typingProvider(widget.roomId).notifier)
+          .setTyping(userId, typing);
     };
 
     // Register after the first frame so messageListProvider is already
     // being watched (and therefore initialized) by build().
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
-        _container.read(stompServiceProvider).subscribeToRoom(
-          widget.roomId,
-          onMessage: _onMessage,
-          onTyping: _onTyping,
-        );
+        _container
+            .read(stompServiceProvider)
+            .subscribeToRoom(
+              widget.roomId,
+              onMessage: _onMessage,
+              onTyping: _onTyping,
+            );
         _container.read(activeRoomProvider.notifier).state = widget.roomId;
-        _container.read(roomListProvider.notifier).clearUnread(widget.roomId);
+        _container
+            .read(roomListProvider(widget.typeFilter).notifier)
+            .clearUnread(widget.roomId);
+        // Mark all messages as read on the backend so the next room-list
+        // fetch reflects the correct unread count.
+        _container.read(apiServiceProvider).markRoomAsRead(widget.roomId).ignore();
       }
     });
   }
@@ -68,13 +99,17 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
     // Unregister our handlers. Because Dart is single-threaded, no STOMP event
     // can fire between this removal and super.dispose() marking the element
     // defunct — so addMessage will never be called on a defunct element.
-    _container.read(stompServiceProvider).unsubscribeFromRoom(
-      widget.roomId,
-      onMessage: _onMessage,
-      onTyping: _onTyping,
-    );
+    _container
+        .read(stompServiceProvider)
+        .unsubscribeFromRoom(
+          widget.roomId,
+          onMessage: _onMessage,
+          onTyping: _onTyping,
+        );
     _container.read(activeRoomProvider.notifier).state = null;
-    _container.read(roomListProvider.notifier).clearUnread(widget.roomId);
+    _container
+        .read(roomListProvider(widget.typeFilter).notifier)
+        .clearUnread(widget.roomId);
     _controller.dispose();
     _scrollController.dispose();
     _typingTimer?.cancel();
@@ -85,11 +120,9 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
     final text = _controller.text.trim();
     if (text.isEmpty) return;
 
-    ref.read(stompServiceProvider).sendMessage(
-          widget.roomId,
-          text,
-          replyTo: _replyingTo?.id,
-        );
+    ref
+        .read(stompServiceProvider)
+        .sendMessage(widget.roomId, text, replyTo: _replyingTo?.id);
 
     _controller.clear();
     setState(() => _replyingTo = null);
@@ -99,90 +132,105 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
 
   Future<void> _editMessage(Message message) async {
     final controller = TextEditingController(text: message.content);
+    final t = context.chatTheme;
     final newContent = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF1A1A1A),
-        title: const Text('Mesajı Düzenle',
-            style: TextStyle(color: Colors.white)),
+        backgroundColor: t.appBarColor,
+        title: Text('Mesajı Düzenle', style: TextStyle(color: t.textColor)),
         content: TextField(
           controller: controller,
           autofocus: true,
-          style: const TextStyle(color: Colors.white),
+          style: TextStyle(color: t.textColor),
           maxLines: null,
           decoration: InputDecoration(
             filled: true,
-            fillColor: const Color(0xFF2A2A2A),
+            fillColor: t.inputColor,
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
               borderSide: BorderSide.none,
             ),
-            contentPadding:
-                const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 12,
+              vertical: 10,
+            ),
           ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('İptal', style: TextStyle(color: Colors.white54)),
+            child: Text('İptal', style: TextStyle(color: t.textMutedColor)),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, controller.text.trim()),
-            child: const Text('Kaydet',
-                style: TextStyle(color: Color(0xFF4CAF50))),
+            child: Text('Kaydet', style: TextStyle(color: t.primaryColor)),
           ),
         ],
       ),
     );
-    if (newContent == null || newContent.isEmpty || newContent == message.content) return;
+    if (newContent == null ||
+        newContent.isEmpty ||
+        newContent == message.content) {
+      return;
+    }
     try {
-      final updated =
-          await ref.read(apiServiceProvider).editMessage(message.id, newContent);
-      ref.read(messageListProvider(widget.roomId).notifier).updateMessage(updated);
+      final updated = await ref
+          .read(apiServiceProvider)
+          .editMessage(message.id, newContent);
+      ref
+          .read(messageListProvider(widget.roomId).notifier)
+          .updateMessage(updated);
     } catch (_) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Mesaj düzenlenemedi')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Mesaj düzenlenemedi')));
       }
     }
   }
 
   Future<void> _deleteMessage(Message message) async {
+    final t = context.chatTheme;
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF1A1A1A),
-        title: const Text('Mesajı Sil',
-            style: TextStyle(color: Colors.white)),
-        content: const Text('Bu mesajı silmek istiyor musunuz?',
-            style: TextStyle(color: Colors.white70)),
+        backgroundColor: t.appBarColor,
+        title: Text('Mesajı Sil', style: TextStyle(color: t.textColor)),
+        content: Text(
+          'Bu mesajı silmek istiyor musunuz?',
+          style: TextStyle(color: t.textMutedColor),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('İptal', style: TextStyle(color: Colors.white54)),
+            child: Text('İptal', style: TextStyle(color: t.textMutedColor)),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Sil',
-                style: TextStyle(color: Colors.redAccent)),
+            child: const Text('Sil', style: TextStyle(color: Colors.redAccent)),
           ),
         ],
       ),
     );
     if (confirm != true) return;
     try {
-      final updated =
-          await ref.read(apiServiceProvider).deleteMessage(message.id);
-      ref.read(messageListProvider(widget.roomId).notifier).updateMessage(updated);
+      final updated = await ref
+          .read(apiServiceProvider)
+          .deleteMessage(message.id);
+      ref
+          .read(messageListProvider(widget.roomId).notifier)
+          .updateMessage(updated);
     } catch (_) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Mesaj silinemedi')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Mesaj silinemedi')));
       }
     }
   }
+
+  static bool _isSameDay(DateTime a, DateTime b) =>
+      a.year == b.year && a.month == b.month && a.day == b.day;
 
   void _scrollToBottom() {
     if (_scrollController.hasClients) {
@@ -211,36 +259,44 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
   }
 
   Future<void> _pickAndSendImage() async {
+    final t = context.chatTheme;
     final source = await showModalBottomSheet<ImageSource>(
       context: context,
-      backgroundColor: const Color(0xFF1A1A1A),
+      backgroundColor: t.appBarColor,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
-      builder: (_) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const SizedBox(height: 8),
-            Container(
-              width: 36, height: 4,
-              decoration: BoxDecoration(
-                color: Colors.white24,
-                borderRadius: BorderRadius.circular(2),
+      builder: (_) => ChatThemeProvider(
+        theme: t,
+        child: SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 8),
+              Container(
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: t.textMutedColor.withValues(alpha: 0.3),
+                  borderRadius: BorderRadius.circular(2),
+                ),
               ),
-            ),
-            ListTile(
-              leading: const Icon(Icons.photo_library, color: Colors.white70),
-              title: const Text('Galeriden seç', style: TextStyle(color: Colors.white)),
-              onTap: () => Navigator.pop(context, ImageSource.gallery),
-            ),
-            ListTile(
-              leading: const Icon(Icons.camera_alt, color: Colors.white70),
-              title: const Text('Kamera', style: TextStyle(color: Colors.white)),
-              onTap: () => Navigator.pop(context, ImageSource.camera),
-            ),
-            const SizedBox(height: 8),
-          ],
+              ListTile(
+                leading: Icon(Icons.photo_library, color: t.iconColor),
+                title: Text(
+                  'Galeriden seç',
+                  style: TextStyle(color: t.textColor),
+                ),
+                onTap: () => Navigator.pop(context, ImageSource.gallery),
+              ),
+              ListTile(
+                leading: Icon(Icons.camera_alt, color: t.iconColor),
+                title: Text('Kamera', style: TextStyle(color: t.textColor)),
+                onTap: () => Navigator.pop(context, ImageSource.camera),
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
         ),
       ),
     );
@@ -253,16 +309,20 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
 
     setState(() => _uploading = true);
     try {
-      final message = await ref.read(apiServiceProvider).sendImageMessage(widget.roomId, picked.path);
+      final message = await ref
+          .read(apiServiceProvider)
+          .sendImageMessage(widget.roomId, picked.path, mimeType: picked.mimeType);
       // Add directly from REST response — don't wait for STOMP broadcast.
       // addMessage does upsert so no duplicate if STOMP also delivers it.
-      _container.read(messageListProvider(widget.roomId).notifier).addMessage(message);
+      _container
+          .read(messageListProvider(widget.roomId).notifier)
+          .addMessage(message);
       _scrollToBottom();
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Fotoğraf gönderilemedi')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Fotoğraf gönderilemedi')));
       }
     } finally {
       if (mounted) setState(() => _uploading = false);
@@ -290,8 +350,10 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
       if (idx == -1) return;
 
       const estimatedItemHeight = 72.0;
-      final target = (idx * estimatedItemHeight)
-          .clamp(0.0, _scrollController.position.maxScrollExtent);
+      final target = (idx * estimatedItemHeight).clamp(
+        0.0,
+        _scrollController.position.maxScrollExtent,
+      );
       await _scrollController.animateTo(
         target,
         duration: const Duration(milliseconds: 350),
@@ -316,43 +378,64 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
   Widget build(BuildContext context) {
     final messagesAsync = ref.watch(messageListProvider(widget.roomId));
     final typingUsers = ref.watch(typingProvider(widget.roomId));
+    final config = ref.read(chatConfigProvider);
+
+    final t = context.chatTheme;
+    final isDirect = widget.roomType == RoomType.direct;
 
     return Scaffold(
-      backgroundColor: const Color(0xFF0F0F0F),
+      backgroundColor: t.scaffoldColor,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF1A1A1A),
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        backgroundColor: t.appBarColor,
+        titleSpacing: isDirect ? 0 : NavigationToolbar.kMiddleSpacing,
+        title: Row(
           children: [
-            const Text('Sohbet', style: TextStyle(color: Colors.white)),
-            if (typingUsers.isNotEmpty)
-              Text(
-                'yazıyor...',
-                style: const TextStyle(color: Colors.white54, fontSize: 12),
+            if (isDirect) ...[
+              _AppBarAvatar(
+                avatarUrl: widget.avatarUrl,
+                serverUrl: config.apiUrl,
               ),
+              const SizedBox(width: 10),
+            ],
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  widget.title ?? 'Sohbet',
+                  style: TextStyle(color: t.textColor),
+                ),
+                if (typingUsers.isNotEmpty)
+                  Text(
+                    'yazıyor...',
+                    style: TextStyle(color: t.textMutedColor, fontSize: 12),
+                  ),
+              ],
+            ),
           ],
         ),
-        iconTheme: const IconThemeData(color: Colors.white),
+        iconTheme: IconThemeData(color: t.textColor),
       ),
       body: Column(
         children: [
           Expanded(
             child: messagesAsync.when(
-              loading: () =>
-                  const Center(child: CircularProgressIndicator()),
+              loading: () => const Center(child: CircularProgressIndicator()),
               error: (e, _) => Center(
-                child: Text(e.toString(),
-                    style: const TextStyle(color: Colors.white70)),
+                child: Text(
+                  e.toString(),
+                  style: const TextStyle(color: Colors.white70),
+                ),
               ),
               data: (messages) => ListView.builder(
                 controller: _scrollController,
                 reverse: true,
                 padding: const EdgeInsets.symmetric(
-                    horizontal: 12, vertical: 8),
+                  horizontal: 12,
+                  vertical: 8,
+                ),
                 itemCount: messages.length,
                 itemBuilder: (context, i) {
                   final msg = messages[i];
-                  final config = ref.read(chatConfigProvider);
                   final userId = config.userId;
                   final serverUrl = config.apiUrl;
                   final isMe = msg.senderId == userId;
@@ -363,29 +446,46 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
                     msg.id,
                     () => GlobalKey<MessageBubbleState>(),
                   );
-                  return MessageBubble(
-                    key: bubbleKey,
-                    message: msg,
-                    isMe: isMe,
-                    currentUserId: userId,
-                    serverUrl: serverUrl,
-                    replyToMessage: replyTo,
-                    onReply: (m) => setState(() => _replyingTo = m),
-                    onReact: (m, emoji) => ref
-                        .read(stompServiceProvider)
-                        .sendReaction(widget.roomId, m.id, emoji),
-                    onReplyTap: _scrollToMessage,
-                    onEdit: _editMessage,
-                    onDelete: _deleteMessage,
+
+                  // reverse:true → i=0 newest (bottom), i=N-1 oldest (top).
+                  // Show a date separator above the OLDEST message of each day.
+                  // That's when this message is older-day than the next item (i+1),
+                  // or when this IS the very oldest message (i == messages.length-1).
+                  final showSeparator = i == messages.length - 1 ||
+                      !_isSameDay(msg.createdAt, messages[i + 1].createdAt);
+
+                  return Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (showSeparator)
+                        _DateSeparator(date: msg.createdAt),
+                      MessageBubble(
+                        key: bubbleKey,
+                        message: msg,
+                        isMe: isMe,
+                        currentUserId: userId,
+                        serverUrl: serverUrl,
+                        replyToMessage: replyTo,
+                        showSenderAvatar: !isDirect,
+                        onReply: (m) => setState(() => _replyingTo = m),
+                        onReact: (m, emoji) => ref
+                            .read(stompServiceProvider)
+                            .sendReaction(widget.roomId, m.id, emoji),
+                        onReplyTap: _scrollToMessage,
+                        onEdit: _editMessage,
+                        onDelete: _deleteMessage,
+                      ),
+                    ],
                   );
                 },
               ),
             ),
           ),
-          if (_replyingTo != null) _ReplyBar(
-            message: _replyingTo!,
-            onCancel: () => setState(() => _replyingTo = null),
-          ),
+          if (_replyingTo != null)
+            _ReplyBar(
+              message: _replyingTo!,
+              onCancel: () => setState(() => _replyingTo = null),
+            ),
           _InputBar(
             controller: _controller,
             onChanged: _onTextChanged,
@@ -406,23 +506,24 @@ class _ReplyBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final t = context.chatTheme;
     return Container(
-      color: const Color(0xFF1A1A1A),
+      color: t.appBarColor,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Row(
         children: [
-          Container(width: 3, height: 36, color: const Color(0xFF4CAF50)),
+          Container(width: 3, height: 36, color: t.primaryColor),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
               message.content ?? '',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(color: Colors.white70, fontSize: 13),
+              style: TextStyle(color: t.iconColor, fontSize: 13),
             ),
           ),
           IconButton(
-            icon: const Icon(Icons.close, color: Colors.white54, size: 18),
+            icon: Icon(Icons.close, color: t.textMutedColor, size: 18),
             onPressed: onCancel,
           ),
         ],
@@ -448,14 +549,15 @@ class _InputBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final t = context.chatTheme;
     return Container(
-      color: const Color(0xFF1A1A1A),
+      color: t.appBarColor,
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
       child: SafeArea(
         child: Row(
           children: [
             IconButton(
-              icon: const Icon(Icons.image_outlined, color: Colors.white54),
+              icon: Icon(Icons.image_outlined, color: t.textMutedColor),
               onPressed: uploading ? null : onImageTap,
             ),
             Expanded(
@@ -463,41 +565,138 @@ class _InputBar extends StatelessWidget {
                 controller: controller,
                 onChanged: onChanged,
                 onSubmitted: (_) => onSend(),
-                style: const TextStyle(color: Colors.white),
+                style: TextStyle(color: t.textColor),
                 maxLines: null,
                 decoration: InputDecoration(
                   hintText: 'Mesaj yaz...',
-                  hintStyle: const TextStyle(color: Colors.white38),
+                  hintStyle: TextStyle(color: t.textMutedColor),
                   filled: true,
-                  fillColor: const Color(0xFF2A2A2A),
+                  fillColor: t.inputColor,
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(24),
                     borderSide: BorderSide.none,
                   ),
                   contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 16, vertical: 10),
+                    horizontal: 16,
+                    vertical: 10,
+                  ),
                 ),
               ),
             ),
             const SizedBox(width: 8),
             CircleAvatar(
-              backgroundColor: const Color(0xFF4CAF50),
+              backgroundColor: t.primaryColor,
               child: uploading
-                  ? const Padding(
-                      padding: EdgeInsets.all(10),
+                  ? Padding(
+                      padding: const EdgeInsets.all(10),
                       child: CircularProgressIndicator(
                         strokeWidth: 2,
-                        color: Colors.white,
+                        color: t.textColor,
                       ),
                     )
                   : IconButton(
-                      icon: const Icon(Icons.send, color: Colors.white, size: 18),
+                      icon: Icon(Icons.send, color: t.textColor, size: 18),
                       onPressed: onSend,
                     ),
             ),
           ],
         ),
       ),
+    );
+  }
+}
+
+class _DateSeparator extends StatelessWidget {
+  final DateTime date;
+  const _DateSeparator({required this.date});
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.chatTheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      child: Row(
+        children: [
+          Expanded(child: Divider(color: t.dividerColor, thickness: 0.8)),
+          const SizedBox(width: 10),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: t.inputColor,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text(
+              _label(date),
+              style: TextStyle(
+                color: t.textMutedColor,
+                fontSize: 11,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(child: Divider(color: t.dividerColor, thickness: 0.8)),
+        ],
+      ),
+    );
+  }
+
+  String _label(DateTime date) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final d = DateTime(date.year, date.month, date.day);
+    final diff = today.difference(d).inDays;
+
+    if (diff == 0) return 'Bugün';
+    if (diff == 1) return 'Dün';
+    if (diff < 7) {
+      const days = ['Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi', 'Pazar'];
+      return days[date.weekday - 1];
+    }
+    const months = [
+      'Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran',
+      'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık'
+    ];
+    if (date.year == now.year) {
+      return '${date.day} ${months[date.month - 1]}';
+    }
+    return '${date.day} ${months[date.month - 1]} ${date.year}';
+  }
+}
+
+/// Small circular avatar shown in the app bar for direct (1-1) chats.
+class _AppBarAvatar extends StatelessWidget {
+  final String? avatarUrl;
+  final String serverUrl;
+
+  const _AppBarAvatar({required this.avatarUrl, required this.serverUrl});
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.chatTheme;
+
+    if (avatarUrl != null) {
+      final url = avatarUrl!.startsWith('http') ? avatarUrl! : '$serverUrl$avatarUrl';
+      return CircleAvatar(
+        radius: 18,
+        backgroundColor: t.inputColor,
+        child: ClipOval(
+          child: CachedNetworkImage(
+            imageUrl: url,
+            width: 36,
+            height: 36,
+            fit: BoxFit.cover,
+            placeholder: (_, __) => Icon(Icons.person, size: 18, color: t.textMutedColor),
+            errorWidget: (_, __, ___) => Icon(Icons.person, size: 18, color: t.textMutedColor),
+          ),
+        ),
+      );
+    }
+
+    return CircleAvatar(
+      radius: 18,
+      backgroundColor: t.inputColor,
+      child: Icon(Icons.person, size: 18, color: t.textMutedColor),
     );
   }
 }

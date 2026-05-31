@@ -91,7 +91,9 @@ class Message {
             ? MessageLocation.fromJson(json['location'] as Map<String, dynamic>)
             : null,
         isPinned: json['pinned'] as bool? ?? false,
-        createdAt: DateTime.parse(json['createdAt'] as String),
+        createdAt: json['createdAt'] != null
+            ? DateTime.parse(json['createdAt'] as String)
+            : DateTime.now(),
       );
 
   static MessageType _parseType(String type) => switch (type) {

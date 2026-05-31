@@ -1,4 +1,5 @@
 export 'src/config/chat_config.dart';
+export 'src/config/chat_theme.dart';
 export 'src/screens/room_list/room_list_screen.dart';
 export 'src/screens/room/room_screen.dart';
 export 'src/models/room.dart';
@@ -8,25 +9,50 @@ export 'src/models/chat_user.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'src/config/chat_config.dart';
+import 'src/config/chat_theme.dart';
 import 'src/providers/config_provider.dart';
 import 'src/providers/service_providers.dart';
 
 class ChatApp {
   ChatApp._();
 
-  /// Host app calls this once after login.
+  // Persists the container across initialize() calls for the same user session.
+  // Prevents provider state (room list, unread counts, STOMP subscriptions)
+  // from being reset every time the host app rebuilds the chat screen.
+  static ProviderContainer? _container;
+  static String? _cachedJwt;
+
+  /// Host app calls this to embed the chat UI.
+  /// The [ProviderContainer] is reused as long as [config.jwtToken] stays
+  /// the same, so Riverpod state (unread counts, cached rooms, etc.) survives
+  /// screen rebuilds and navigator push/pop cycles.
+  ///
   /// Pass [ChatConfig.fcmToken] (from firebase_messaging) to enable push
   /// notifications — the package registers the token with the backend.
   static Widget initialize({
     required ChatConfig config,
     required Widget child,
   }) {
-    return ProviderScope(
-      overrides: [
-        chatConfigProvider.overrideWithValue(config),
-      ],
+    if (_container == null || _cachedJwt != config.jwtToken) {
+      // New user session — start fresh.
+      _container?.dispose();
+      _container = ProviderContainer(
+        overrides: [chatConfigProvider.overrideWithValue(config)],
+      );
+      _cachedJwt = config.jwtToken;
+    }
+
+    return UncontrolledProviderScope(
+      container: _container!,
       child: _ChatInitWidget(child: child),
     );
+  }
+
+  /// Call this on logout to release all resources (STOMP, HTTP, providers).
+  static void reset() {
+    _container?.dispose();
+    _container = null;
+    _cachedJwt = null;
   }
 }
 
@@ -51,5 +77,8 @@ class _ChatInitWidgetState extends ConsumerState<_ChatInitWidget> {
   }
 
   @override
-  Widget build(BuildContext context) => widget.child;
+  Widget build(BuildContext context) {
+    final theme = ref.read(chatConfigProvider).theme;
+    return ChatThemeProvider(theme: theme, child: widget.child);
+  }
 }

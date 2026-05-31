@@ -62,6 +62,11 @@ class Room {
             .map((m) => RoomMember.fromJson(m as Map<String, dynamic>))
             .toList(),
         createdAt: DateTime.parse(json['createdAt'] as String),
+        lastMessage: json['lastMessage'] as String?,
+        lastMessageAt: json['lastActivityAt'] != null
+            ? DateTime.parse(json['lastActivityAt'] as String)
+            : null,
+        unreadCount: (json['unreadCount'] as num?)?.toInt() ?? 0,
       );
 
   bool isMuted(String currentUserId) {

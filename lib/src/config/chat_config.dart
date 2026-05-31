@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'chat_theme.dart';
 
 class ChatConfig {
   final String serverUrl;
@@ -8,10 +9,14 @@ class ChatConfig {
   /// it with the backend so push notifications can be delivered.
   final String? fcmToken;
 
+  /// Visual theme. Defaults to [ChatTheme.dark] if not provided.
+  final ChatTheme theme;
+
   const ChatConfig({
     required this.serverUrl,
     required this.jwtToken,
     this.fcmToken,
+    this.theme = const ChatTheme.dark(),
   });
 
   String get wsUrl => serverUrl.replaceFirst(RegExp(r'^http'), 'ws');

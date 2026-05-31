@@ -8,40 +8,91 @@ import 'service_providers.dart';
 final activeRoomProvider = StateProvider<String?>((ref) => null);
 
 // Room list
-final roomListProvider = AsyncNotifierProvider<RoomListNotifier, List<Room>>(
+final roomListProvider =
+    AsyncNotifierProvider.family<RoomListNotifier, List<Room>, RoomType?>(
   RoomListNotifier.new,
   dependencies: [apiServiceProvider],
 );
 
-class RoomListNotifier extends AsyncNotifier<List<Room>> {
+class RoomListNotifier extends FamilyAsyncNotifier<List<Room>, RoomType?> {
+  int _page = 0;
+  bool _hasNext = false;
+  bool _loadingMore = false;
+
+  String? get _typeParam => switch (arg) {
+        RoomType.direct => 'DIRECT',
+        RoomType.group => 'GROUP',
+        null => null,
+      };
+
   @override
-  Future<List<Room>> build() async {
-    return ref.watch(apiServiceProvider).getRooms();
+  Future<List<Room>> build(RoomType? arg) async {
+    _page = 0;
+    final result = await ref.watch(apiServiceProvider).getRooms(type: _typeParam, page: 0);
+    _hasNext = result.hasNext;
+    _page = 1;
+    return result.rooms;
   }
 
   Future<void> refresh() async {
+    _page = 0;
+    _hasNext = false;
+    _loadingMore = false;
     state = const AsyncLoading();
-    state = await AsyncValue.guard(
-      () => ref.read(apiServiceProvider).getRooms(),
-    );
+    state = await AsyncValue.guard(() async {
+      final result = await ref.read(apiServiceProvider).getRooms(type: _typeParam, page: 0);
+      _hasNext = result.hasNext;
+      _page = 1;
+      return result.rooms;
+    });
   }
+
+  Future<void> loadMore() async {
+    if (_loadingMore || !_hasNext) return;
+    _loadingMore = true;
+    try {
+      final result = await ref.read(apiServiceProvider).getRooms(type: _typeParam, page: _page);
+      state.whenData((rooms) {
+        state = AsyncData([...rooms, ...result.rooms]);
+        _hasNext = result.hasNext;
+        _page++;
+      });
+    } finally {
+      _loadingMore = false;
+    }
+  }
+
+  bool get hasMore => _hasNext;
 
   void updateLastMessage(String roomId, Message message, String currentUserId) {
     state.whenData((rooms) {
-      final room = rooms.firstWhere((r) => r.id == roomId,
-          orElse: () => rooms.first);
-      final isUpdate = room.lastMessageAt != null &&
-          !message.createdAt.isAfter(room.lastMessageAt!);
-      final isOwn = message.senderId == currentUserId;
+      // If the room isn't in the loaded list, nothing to update.
+      if (!rooms.any((r) => r.id == roomId)) return;
+
+      final isOwn    = message.senderId == currentUserId;
       final isActive = ref.read(activeRoomProvider) == roomId;
 
       state = AsyncData(rooms.map((r) {
         if (r.id != roomId) return r;
-        if (isUpdate) return r;
+        // Ignore if this message is older than what we already have
+        // (e.g. a reaction update arriving out of order).
+        final isStale = r.lastMessageAt != null &&
+            !message.createdAt.isAfter(r.lastMessageAt!);
+        if (isStale) return r;
+
+        String? preview;
+        if (message.isDeleted) {
+          preview = 'Mesaj silindi';
+        } else if (message.type == MessageType.image) {
+          preview = '📷 Fotoğraf';
+        } else {
+          preview = message.content;
+        }
+
         return r.copyWith(
-          lastMessage: message.isDeleted ? 'Mesaj silindi' : message.content,
+          lastMessage:   preview,
           lastMessageAt: message.createdAt,
-          unreadCount: (isOwn || isActive) ? r.unreadCount : r.unreadCount + 1,
+          unreadCount:   (isOwn || isActive) ? r.unreadCount : r.unreadCount + 1,
         );
       }).toList()
         ..sort((a, b) => (b.lastMessageAt ?? b.createdAt)

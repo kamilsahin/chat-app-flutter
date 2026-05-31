@@ -1,6 +1,7 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../../config/chat_theme.dart';
 import '../../models/message.dart';
 
 class MessageBubble extends StatefulWidget {
@@ -15,6 +16,10 @@ class MessageBubble extends StatefulWidget {
   final void Function(Message)? onDelete;
   final String serverUrl;
 
+  /// If false, the sender avatar circle on the left side of incoming messages
+  /// is hidden (useful for 1-1 direct chats where the sender is obvious).
+  final bool showSenderAvatar;
+
   const MessageBubble({
     super.key,
     required this.message,
@@ -27,6 +32,7 @@ class MessageBubble extends StatefulWidget {
     this.onEdit,
     this.onDelete,
     this.serverUrl = '',
+    this.showSenderAvatar = true,
   });
 
   @override
@@ -47,6 +53,7 @@ class MessageBubbleState extends State<MessageBubble> {
   @override
   Widget build(BuildContext context) {
     final hasReactions = widget.message.reactions.isNotEmpty;
+    final t = context.chatTheme;
 
     return GestureDetector(
       onLongPress: () => _showActions(context),
@@ -54,7 +61,7 @@ class MessageBubbleState extends State<MessageBubble> {
         duration: const Duration(milliseconds: 200),
         decoration: BoxDecoration(
           color: _highlighted
-              ? const Color(0xFF4CAF50).withValues(alpha: 0.12)
+              ? t.primaryColor.withValues(alpha: 0.12)
               : Colors.transparent,
           borderRadius: BorderRadius.circular(12),
         ),
@@ -65,11 +72,11 @@ class MessageBubbleState extends State<MessageBubble> {
               : MainAxisAlignment.start,
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
-            if (!widget.isMe) ...[
-              const CircleAvatar(
+            if (!widget.isMe && widget.showSenderAvatar) ...[
+              CircleAvatar(
                 radius: 14,
-                backgroundColor: Color(0xFF2A2A2A),
-                child: Icon(Icons.person, size: 14, color: Colors.white54),
+                backgroundColor: t.inputColor,
+                child: Icon(Icons.person, size: 14, color: t.textMutedColor),
               ),
               const SizedBox(width: 6),
             ],
@@ -95,8 +102,8 @@ class MessageBubbleState extends State<MessageBubble> {
                         ),
                         decoration: BoxDecoration(
                           color: widget.isMe
-                              ? const Color(0xFF2A5C3F)
-                              : const Color(0xFF1E1E1E),
+                              ? t.myBubbleColor
+                              : t.otherBubbleColor,
                           borderRadius: BorderRadius.only(
                             topLeft: const Radius.circular(16),
                             topRight: const Radius.circular(16),
@@ -106,7 +113,7 @@ class MessageBubbleState extends State<MessageBubble> {
                                 Radius.circular(widget.isMe ? 4 : 16),
                           ),
                         ),
-                        child: _buildContent(),
+                        child: _buildContent(context),
                       ),
                       if (hasReactions)
                         Positioned(
@@ -125,8 +132,7 @@ class MessageBubbleState extends State<MessageBubble> {
                   SizedBox(height: hasReactions ? 14 : 2),
                   Text(
                     _formatTime(widget.message.createdAt),
-                    style: const TextStyle(
-                        color: Colors.white38, fontSize: 10),
+                    style: TextStyle(color: t.textMutedColor, fontSize: 10),
                   ),
                 ],
               ),
@@ -137,12 +143,13 @@ class MessageBubbleState extends State<MessageBubble> {
     );
   }
 
-  Widget _buildContent() {
+  Widget _buildContent(BuildContext context) {
+    final t = context.chatTheme;
     if (widget.message.isDeleted) {
-      return const Text(
+      return Text(
         'Bu mesaj silindi',
         style: TextStyle(
-            color: Colors.white38,
+            color: t.textMutedColor,
             fontStyle: FontStyle.italic,
             fontSize: 14),
       );
@@ -159,11 +166,10 @@ class MessageBubbleState extends State<MessageBubble> {
               padding:
                   const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
               decoration: BoxDecoration(
-                color: Colors.black26,
+                color: t.scaffoldColor.withValues(alpha: 0.4),
                 borderRadius: BorderRadius.circular(8),
-                border: const Border(
-                    left:
-                        BorderSide(color: Color(0xFF4CAF50), width: 3)),
+                border: Border(
+                    left: BorderSide(color: t.primaryColor, width: 3)),
               ),
               child: Text(
                 widget.replyToMessage!.isDeleted
@@ -173,16 +179,14 @@ class MessageBubbleState extends State<MessageBubble> {
                         : (widget.replyToMessage!.content ?? ''),
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
-                style:
-                    const TextStyle(color: Colors.white60, fontSize: 12),
+                style: TextStyle(color: t.iconColor, fontSize: 12),
               ),
             ),
           ),
         if (widget.message.type == MessageType.text)
           Text(
             widget.message.content ?? '',
-            style:
-                const TextStyle(color: Colors.white, fontSize: 15),
+            style: TextStyle(color: t.textColor, fontSize: 15),
           ),
         if (widget.message.type == MessageType.image &&
             widget.message.imageUrl != null)
@@ -194,108 +198,110 @@ class MessageBubbleState extends State<MessageBubble> {
                 imageUrl: _resolveUrl(widget.message.imageUrl!),
                 width: 220,
                 fit: BoxFit.cover,
-                placeholder: (_, __) => const SizedBox(
+                placeholder: (_, __) => SizedBox(
                   width: 220,
                   height: 140,
                   child: Center(
-                    child: CircularProgressIndicator(strokeWidth: 2),
+                    child: CircularProgressIndicator(strokeWidth: 2, color: t.primaryColor),
                   ),
                 ),
-                errorWidget: (_, __, ___) => const SizedBox(
+                errorWidget: (_, __, ___) => SizedBox(
                   width: 220,
                   height: 80,
                   child: Center(
-                    child: Icon(Icons.broken_image, color: Colors.white38, size: 32),
+                    child: Icon(Icons.broken_image, color: t.textMutedColor, size: 32),
                   ),
                 ),
               ),
             ),
           ),
         if (widget.message.isEdited)
-          const Text(
+          Text(
             'düzenlendi',
-            style: TextStyle(color: Colors.white38, fontSize: 10),
+            style: TextStyle(color: t.textMutedColor, fontSize: 10),
           ),
       ],
     );
   }
 
   void _showActions(BuildContext context) {
+    final t = context.chatTheme;
     showModalBottomSheet(
       context: context,
-      backgroundColor: const Color(0xFF1A1A1A),
+      backgroundColor: t.appBarColor,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
-      builder: (_) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const SizedBox(height: 8),
-            Container(
-              width: 36,
-              height: 4,
-              decoration: BoxDecoration(
-                color: Colors.white24,
-                borderRadius: BorderRadius.circular(2),
+      builder: (_) => ChatThemeProvider(
+        theme: t,
+        child: SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 8),
+              Container(
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: t.textMutedColor.withValues(alpha: 0.3),
+                  borderRadius: BorderRadius.circular(2),
+                ),
               ),
-            ),
-            const SizedBox(height: 12),
-            _EmojiPicker(
-              currentReactions: widget.message.reactions,
-              currentUserId: widget.currentUserId,
-              onSelect: (e) {
-                Navigator.pop(context);
-                widget.onReact(widget.message, e);
-              },
-            ),
-            const Divider(color: Color(0xFF2A2A2A), height: 1),
-            ListTile(
-              leading: const Icon(Icons.reply, color: Colors.white70),
-              title: const Text('Yanıtla',
-                  style: TextStyle(color: Colors.white)),
-              onTap: () {
-                Navigator.pop(context);
-                widget.onReply(widget.message);
-              },
-            ),
-            if (widget.message.content != null && !widget.message.isDeleted)
-              ListTile(
-                leading: const Icon(Icons.copy, color: Colors.white70),
-                title: const Text('Kopyala',
-                    style: TextStyle(color: Colors.white)),
-                onTap: () {
+              const SizedBox(height: 12),
+              _EmojiPicker(
+                currentReactions: widget.message.reactions,
+                currentUserId: widget.currentUserId,
+                onSelect: (e) {
                   Navigator.pop(context);
-                  Clipboard.setData(ClipboardData(text: widget.message.content!));
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Mesaj kopyalandı'),
-                      duration: Duration(seconds: 1),
-                    ),
-                  );
+                  widget.onReact(widget.message, e);
                 },
               ),
-            if (widget.isMe && !widget.message.isDeleted &&
-                widget.message.type == MessageType.text)
+              Divider(color: t.dividerColor, height: 1),
               ListTile(
-                leading: const Icon(Icons.edit_outlined, color: Colors.white70),
-                title: const Text('Düzenle', style: TextStyle(color: Colors.white)),
+                leading: Icon(Icons.reply, color: t.iconColor),
+                title: Text('Yanıtla', style: TextStyle(color: t.textColor)),
                 onTap: () {
                   Navigator.pop(context);
-                  widget.onEdit?.call(widget.message);
+                  widget.onReply(widget.message);
                 },
               ),
-            if (widget.isMe && !widget.message.isDeleted)
-              ListTile(
-                leading: const Icon(Icons.delete_outline, color: Colors.redAccent),
-                title: const Text('Sil', style: TextStyle(color: Colors.redAccent)),
-                onTap: () {
-                  Navigator.pop(context);
-                  widget.onDelete?.call(widget.message);
-                },
-              ),
-            const SizedBox(height: 8),
-          ],
+              if (widget.message.content != null && !widget.message.isDeleted)
+                ListTile(
+                  leading: Icon(Icons.copy, color: t.iconColor),
+                  title: Text('Kopyala', style: TextStyle(color: t.textColor)),
+                  onTap: () {
+                    Navigator.pop(context);
+                    Clipboard.setData(ClipboardData(text: widget.message.content!));
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Mesaj kopyalandı'),
+                        duration: Duration(seconds: 1),
+                      ),
+                    );
+                  },
+                ),
+              if (widget.isMe && !widget.message.isDeleted &&
+                  widget.message.type == MessageType.text)
+                ListTile(
+                  leading: Icon(Icons.edit_outlined, color: t.iconColor),
+                  title: Text('Düzenle', style: TextStyle(color: t.textColor)),
+                  onTap: () {
+                    Navigator.pop(context);
+                    widget.onEdit?.call(widget.message);
+                  },
+                ),
+              if (widget.isMe && !widget.message.isDeleted)
+                ListTile(
+                  leading: const Icon(Icons.delete_outline, color: Colors.redAccent),
+                  title: const Text('Sil', style: TextStyle(color: Colors.redAccent)),
+                  onTap: () {
+                    Navigator.pop(context);
+                    widget.onDelete?.call(widget.message);
+                  },
+                ),
+              const SizedBox(height: 8),
+            ],
+          ),
         ),
       ),
     );
@@ -337,6 +343,7 @@ class _EmojiPicker extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final t = context.chatTheme;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
       child: Row(
@@ -350,13 +357,11 @@ class _EmojiPicker extends StatelessWidget {
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
                 color: selected
-                    ? const Color(0xFF4CAF50).withValues(alpha: 0.25)
+                    ? t.primaryColor.withValues(alpha: 0.25)
                     : Colors.transparent,
                 shape: BoxShape.circle,
                 border: Border.all(
-                  color: selected
-                      ? const Color(0xFF4CAF50)
-                      : Colors.transparent,
+                  color: selected ? t.primaryColor : Colors.transparent,
                   width: 1.5,
                 ),
               ),
@@ -382,6 +387,7 @@ class _ReactionsRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final t = context.chatTheme;
     return Wrap(
       spacing: 4,
       runSpacing: 4,
@@ -395,13 +401,11 @@ class _ReactionsRow extends StatelessWidget {
                 const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
             decoration: BoxDecoration(
               color: iReacted
-                  ? const Color(0xFF4CAF50).withValues(alpha: 0.2)
-                  : const Color(0xFF2A2A2A),
+                  ? t.primaryColor.withValues(alpha: 0.2)
+                  : t.inputColor,
               borderRadius: BorderRadius.circular(10),
               border: Border.all(
-                color: iReacted
-                    ? const Color(0xFF4CAF50)
-                    : const Color(0xFF3A3A3A),
+                color: iReacted ? t.primaryColor : t.dividerColor,
                 width: 1,
               ),
             ),
@@ -409,7 +413,7 @@ class _ReactionsRow extends StatelessWidget {
               '${r.emoji} ${r.userIds.length}',
               style: TextStyle(
                 fontSize: 12,
-                color: iReacted ? Colors.white : Colors.white70,
+                color: iReacted ? t.textColor : t.iconColor,
               ),
             ),
           ),
