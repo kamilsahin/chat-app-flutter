@@ -1,6 +1,12 @@
 # chat_app_flutter
 
-A Flutter package that embeds a real-time chat UI into any existing app. Connects to the [chat-app](https://github.com/kamilsahin/chat-app) Spring Boot backend over WebSocket/STOMP.
+A Flutter package that embeds a real-time chat UI into any existing app. Connects to the **[chat-app](https://github.com/kamilsahin/chat-app)** Spring Boot backend over WebSocket/STOMP.
+
+> **This package is one half of an open-source chat system.**
+> - **Flutter package (this)** — drop-in chat UI for your Flutter app
+> - **Spring Boot backend** — [github.com/kamilsahin/chat-app](https://github.com/kamilsahin/chat-app) — REST + WebSocket/STOMP server with MongoDB, JWT auth, FCM push notifications, and an Internal API for room management
+
+Both projects are open-source and designed to work together. You can self-host the backend and plug this package into any Flutter app.
 
 ## Features
 
