@@ -1,3 +1,10 @@
+## 0.1.4
+
+- Add `ChatApp.activeRoomId` static getter — exposes the currently open room ID so host apps can suppress in-app notifications for the active room
+- Add `ChatApp.notificationColor` static getter — exposes the chat theme primary color for custom notification UI outside the package
+- Fix: `catchError` handler in scroll listener now returns a value (lint warning)
+- Fix: `prefer_null_aware_operators` in `notificationColor` getter
+
 ## 0.1.3
 
 - Fix: remaining `.read()` call on nullable `_container` in image send flow

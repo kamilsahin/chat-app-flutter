@@ -98,7 +98,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
               ?.read(messageListProvider(widget.roomId).notifier)
               .loadMore(cursor)
               .then((_) => _loadingMore = false)
-              .catchError((e) { _loadingMore = false; });
+              .catchError((e) { _loadingMore = false; return false; });
         }
       }
     });

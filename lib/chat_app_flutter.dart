@@ -64,9 +64,7 @@ class ChatApp {
   /// ChatConfig'de tanımlanan tema primary rengi.
   /// Bildirim overlay'i gibi dış bileşenler tema rengini buradan okur.
   static Color? get notificationColor =>
-      _container != null
-          ? _container!.read(chatConfigProvider).theme.primaryColor
-          : null;
+      _container?.read(chatConfigProvider).theme.primaryColor;
 }
 
 class _ChatInitWidget extends ConsumerStatefulWidget {

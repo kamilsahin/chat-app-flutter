@@ -456,7 +456,7 @@ class _LinkTextState extends State<_LinkText> {
 
   @override
   void dispose() {
-    for (final r in _recognizers) r.dispose();
+    for (final r in _recognizers) { r.dispose(); }
     super.dispose();
   }
 
@@ -469,7 +469,7 @@ class _LinkTextState extends State<_LinkText> {
 
   @override
   Widget build(BuildContext context) {
-    for (final r in _recognizers) r.dispose();
+    for (final r in _recognizers) { r.dispose(); }
     _recognizers.clear();
 
     final spans = <InlineSpan>[];
