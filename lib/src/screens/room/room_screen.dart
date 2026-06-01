@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -45,6 +46,8 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
   bool _isTyping = false;
   bool _uploading = false;
   bool _initialized = false;
+  bool _loadingMore = false;
+  XFile? _pendingImage;
   ProviderContainer? _container;
   late MessageCallback _onMessage;
   late TypingCallback _onTyping;
@@ -65,12 +68,40 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
       _container
           ?.read(messageListProvider(widget.roomId).notifier)
           .addMessage(message);
+      // Kullanıcı en alttaysa (pixels < 100) yeni mesajla birlikte scroll et
+      final nearBottom = !_scrollController.hasClients ||
+          _scrollController.position.pixels < 100;
+      if (nearBottom) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _scrollToBottom();
+        });
+      }
     };
     _onTyping = (userId, typing) {
       _container
           ?.read(typingProvider(widget.roomId).notifier)
           .setTyping(userId, typing);
     };
+
+    // Scroll-to-top → load older messages
+    _scrollController.addListener(() {
+      final px = _scrollController.position.pixels;
+      final max = _scrollController.position.maxScrollExtent;
+      final notifier = _container?.read(messageListProvider(widget.roomId).notifier);
+      if (px >= max - 200 && !_loadingMore && (notifier?.hasMore ?? false)) {
+        final messages =
+            _container?.read(messageListProvider(widget.roomId)).valueOrNull;
+        if (messages != null && messages.isNotEmpty) {
+          _loadingMore = true;
+          final cursor = messages.last.createdAt.toUtc().toIso8601String();
+          _container
+              ?.read(messageListProvider(widget.roomId).notifier)
+              .loadMore(cursor)
+              .then((_) => _loadingMore = false)
+              .catchError((e) { _loadingMore = false; });
+        }
+      }
+    });
 
     // Register after the first frame so messageListProvider is already
     // being watched (and therefore initialized) by build().
@@ -125,6 +156,15 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
 
   void _sendMessage() {
     final text = _controller.text.trim();
+
+    if (_pendingImage != null) {
+      _controller.clear();
+      setState(() => _replyingTo = null);
+      _stopTyping();
+      _sendPendingImage(caption: text.isNotEmpty ? text : null);
+      return;
+    }
+
     if (text.isEmpty) return;
 
     ref
@@ -316,22 +356,29 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
     final picked = await picker.pickImage(source: source, imageQuality: 80);
     if (picked == null || !mounted) return;
 
-    setState(() => _uploading = true);
+    setState(() => _pendingImage = picked);
+  }
+
+  Future<void> _sendPendingImage({String? caption}) async {
+    final picked = _pendingImage;
+    if (picked == null) return;
+
+    setState(() {
+      _pendingImage = null;
+      _uploading = true;
+    });
     try {
       final message = await ref
           .read(apiServiceProvider)
-          .sendImageMessage(widget.roomId, picked.path, mimeType: picked.mimeType);
-      // Add directly from REST response — don't wait for STOMP broadcast.
-      // addMessage does upsert so no duplicate if STOMP also delivers it.
+          .sendImageMessage(widget.roomId, picked.path, mimeType: picked.mimeType, caption: caption);
       _container
           ?.read(messageListProvider(widget.roomId).notifier)
           .addMessage(message);
       _scrollToBottom();
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('Fotoğraf gönderilemedi')));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('Fotoğraf gönderilemedi')));
       }
     } finally {
       if (mounted) setState(() => _uploading = false);
@@ -490,6 +537,11 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
               ),
             ),
           ),
+          if (_pendingImage != null)
+            _ImagePreviewBar(
+              file: File(_pendingImage!.path),
+              onCancel: () => setState(() => _pendingImage = null),
+            ),
           if (_replyingTo != null)
             _ReplyBar(
               message: _replyingTo!,
@@ -501,6 +553,40 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
             onSend: _sendMessage,
             onImageTap: _pickAndSendImage,
             uploading: _uploading,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ImagePreviewBar extends StatelessWidget {
+  final File file;
+  final VoidCallback onCancel;
+  const _ImagePreviewBar({required this.file, required this.onCancel});
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.chatTheme;
+    return Container(
+      color: t.appBarColor,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      child: Row(
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: Image.file(file, width: 72, height: 72, fit: BoxFit.cover),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              'Fotoğraf seçildi — göndermek için ➤ butonuna bas',
+              style: TextStyle(color: t.textMutedColor, fontSize: 13),
+            ),
+          ),
+          IconButton(
+            icon: Icon(Icons.close, color: t.textMutedColor),
+            onPressed: onCancel,
           ),
         ],
       ),
@@ -563,6 +649,8 @@ class _InputBar extends StatelessWidget {
       color: t.appBarColor,
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
       child: SafeArea(
+        top: false,
+        bottom: false,
         child: Row(
           children: [
             IconButton(

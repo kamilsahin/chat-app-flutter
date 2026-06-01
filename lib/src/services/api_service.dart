@@ -119,17 +119,19 @@ class ApiService {
     String roomId,
     String filePath, {
     String? mimeType,
+    String? caption,
   }) async {
     final resolvedMime = mimeType ?? _mimeFromPath(filePath);
-    final formData = FormData.fromMap({
+    final map = <String, dynamic>{
       'file': await MultipartFile.fromFile(
         filePath,
         contentType: DioMediaType.parse(resolvedMime),
       ),
-    });
+    };
+    if (caption != null && caption.isNotEmpty) map['caption'] = caption;
     final res = await _dio.post(
       '/api/rooms/$roomId/messages/image',
-      data: formData,
+      data: FormData.fromMap(map),
       options: Options(sendTimeout: const Duration(seconds: 60)),
     );
     return Message.fromJson(res.data);

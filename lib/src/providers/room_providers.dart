@@ -160,8 +160,12 @@ final messageListProvider =
 
 class MessageListNotifier
     extends FamilyAsyncNotifier<List<Message>, String> {
+  bool _hasMore = true;
+  bool get hasMore => _hasMore;
+
   @override
   Future<List<Message>> build(String roomId) async {
+    _hasMore = true;
     return ref.watch(apiServiceProvider).getMessages(roomId);
   }
 
@@ -190,12 +194,17 @@ class MessageListNotifier
   }
 
   Future<void> loadMore(String cursor) async {
-    state.whenData((messages) async {
-      final older = await ref
-          .read(apiServiceProvider)
-          .getMessages(arg, cursor: cursor);
-      state = AsyncData([...messages, ...older]);
-    });
+    if (!_hasMore) return;
+    final current = state.valueOrNull;
+    if (current == null) return;
+    final older = await ref
+        .read(apiServiceProvider)
+        .getMessages(arg, cursor: cursor);
+    if (older.isNotEmpty) {
+      state = AsyncData([...current, ...older]);
+    } else {
+      _hasMore = false; // daha mesaj yok, tekrar sorgulanmasın
+    }
   }
 }
 

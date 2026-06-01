@@ -1,6 +1,8 @@
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../config/chat_theme.dart';
 import '../../models/message.dart';
 
@@ -184,12 +186,13 @@ class MessageBubbleState extends State<MessageBubble> {
             ),
           ),
         if (widget.message.type == MessageType.text)
-          Text(
-            widget.message.content ?? '',
+          _LinkText(
+            text: widget.message.content ?? '',
             style: TextStyle(color: t.textColor, fontSize: 15),
+            linkColor: t.primaryColor,
           ),
         if (widget.message.type == MessageType.image &&
-            widget.message.imageUrl != null)
+            widget.message.imageUrl != null) ...[
           GestureDetector(
             onTap: () => _openFullScreen(context, _resolveUrl(widget.message.imageUrl!)),
             child: ClipRRect(
@@ -215,6 +218,16 @@ class MessageBubbleState extends State<MessageBubble> {
               ),
             ),
           ),
+          if (widget.message.content != null && widget.message.content!.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: _LinkText(
+                text: widget.message.content!,
+                style: TextStyle(color: t.textColor, fontSize: 15),
+                linkColor: t.primaryColor,
+              ),
+            ),
+        ],
         if (widget.message.isEdited)
           Text(
             'düzenlendi',
@@ -420,6 +433,78 @@ class _ReactionsRow extends StatelessWidget {
         );
       }).toList(),
     );
+  }
+}
+
+class _LinkText extends StatefulWidget {
+  final String text;
+  final TextStyle style;
+  final Color linkColor;
+  const _LinkText({required this.text, required this.style, required this.linkColor});
+
+  @override
+  State<_LinkText> createState() => _LinkTextState();
+}
+
+class _LinkTextState extends State<_LinkText> {
+  final _recognizers = <TapGestureRecognizer>[];
+
+  static final _urlRegex = RegExp(
+    r'https?://[^\s]+',
+    caseSensitive: false,
+  );
+
+  @override
+  void dispose() {
+    for (final r in _recognizers) r.dispose();
+    super.dispose();
+  }
+
+  Future<void> _open(String url) async {
+    final uri = Uri.tryParse(url);
+    if (uri != null && await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    for (final r in _recognizers) r.dispose();
+    _recognizers.clear();
+
+    final spans = <InlineSpan>[];
+    int last = 0;
+
+    for (final match in _urlRegex.allMatches(widget.text)) {
+      if (match.start > last) {
+        spans.add(TextSpan(
+          text: widget.text.substring(last, match.start),
+          style: widget.style,
+        ));
+      }
+      final url = match.group(0)!;
+      final rec = TapGestureRecognizer()..onTap = () => _open(url);
+      _recognizers.add(rec);
+      spans.add(TextSpan(
+        text: url,
+        recognizer: rec,
+        style: widget.style.copyWith(
+          color: widget.linkColor,
+          decoration: TextDecoration.underline,
+          decorationColor: widget.linkColor,
+        ),
+      ));
+      last = match.end;
+    }
+
+    if (last < widget.text.length) {
+      spans.add(TextSpan(
+        text: widget.text.substring(last),
+        style: widget.style,
+      ));
+    }
+
+    return RichText(text: TextSpan(children: spans));
   }
 }
 

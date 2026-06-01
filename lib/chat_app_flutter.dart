@@ -11,6 +11,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'src/config/chat_config.dart';
 import 'src/config/chat_theme.dart';
 import 'src/providers/config_provider.dart';
+import 'src/providers/room_providers.dart';
 import 'src/providers/service_providers.dart';
 
 class ChatApp {
@@ -54,6 +55,18 @@ class ChatApp {
     _container = null;
     _cachedJwt = null;
   }
+
+  /// Şu an açık olan chat odası ID'si.
+  /// Kullanıcı bir odadaysa roomId döner, değilse null.
+  /// NotificationService gibi dışarıdan okuyanlar için.
+  static String? get activeRoomId => _container?.read(activeRoomProvider);
+
+  /// ChatConfig'de tanımlanan tema primary rengi.
+  /// Bildirim overlay'i gibi dış bileşenler tema rengini buradan okur.
+  static Color? get notificationColor =>
+      _container != null
+          ? _container!.read(chatConfigProvider).theme.primaryColor
+          : null;
 }
 
 class _ChatInitWidget extends ConsumerStatefulWidget {
