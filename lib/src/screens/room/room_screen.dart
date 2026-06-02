@@ -25,6 +25,10 @@ class RoomScreen extends ConsumerStatefulWidget {
   /// Avatar URL of the room (other person's photo for direct, group photo for groups).
   final String? avatarUrl;
 
+  /// DIRECT sohbette karşı kişinin externalId'si — appbar'a tıklanınca
+  /// profil callback'ine geçilir. Group sohbetlerde null.
+  final String? otherUserId;
+
   const RoomScreen({
     super.key,
     required this.roomId,
@@ -32,6 +36,7 @@ class RoomScreen extends ConsumerStatefulWidget {
     this.typeFilter,
     this.roomType,
     this.avatarUrl,
+    this.otherUserId,
   });
 
   @override
@@ -152,6 +157,14 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
     _scrollController.dispose();
     _typingTimer?.cancel();
     super.dispose();
+  }
+
+  /// DIRECT sohbette karşı kullanıcının profilini açar (host callback'i ile).
+  void _openProfile() {
+    if (widget.roomType != RoomType.direct) return;
+    final id = widget.otherUserId;
+    if (id == null) return;
+    ref.read(chatConfigProvider).onUserProfileTap?.call(id);
   }
 
   void _sendMessage() {
@@ -442,34 +455,40 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
     return Scaffold(
       backgroundColor: t.scaffoldColor,
       appBar: AppBar(
-        backgroundColor: t.appBarColor,
+        backgroundColor: t.appBarBackgroundColor,
         titleSpacing: isDirect ? 0 : NavigationToolbar.kMiddleSpacing,
-        title: Row(
-          children: [
-            if (isDirect) ...[
-              _AppBarAvatar(
-                avatarUrl: widget.avatarUrl,
-                serverUrl: config.apiUrl,
-              ),
-              const SizedBox(width: 10),
-            ],
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  widget.title ?? 'Sohbet',
-                  style: TextStyle(color: t.textColor),
+        title: GestureDetector(
+          onTap: _openProfile,
+          behavior: HitTestBehavior.opaque,
+          child: Row(
+            children: [
+              if (isDirect) ...[
+                _AppBarAvatar(
+                  avatarUrl: widget.avatarUrl,
+                  serverUrl: config.apiUrl,
                 ),
-                if (typingUsers.isNotEmpty)
-                  Text(
-                    'yazıyor...',
-                    style: TextStyle(color: t.textMutedColor, fontSize: 12),
-                  ),
+                const SizedBox(width: 10),
               ],
-            ),
-          ],
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    widget.title ?? 'Sohbet',
+                    style: TextStyle(color: t.appBarForegroundColor),
+                  ),
+                  if (typingUsers.isNotEmpty)
+                    Text(
+                      'yazıyor...',
+                      style: TextStyle(
+                          color: t.appBarForegroundColor.withValues(alpha: 0.7),
+                          fontSize: 12),
+                    ),
+                ],
+              ),
+            ],
+          ),
         ),
-        iconTheme: IconThemeData(color: t.textColor),
+        iconTheme: IconThemeData(color: t.appBarForegroundColor),
       ),
       body: Column(
         children: [
@@ -485,6 +504,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
               data: (messages) => ListView.builder(
                 controller: _scrollController,
                 reverse: true,
+                keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
                 padding: const EdgeInsets.symmetric(
                   horizontal: 12,
                   vertical: 8,

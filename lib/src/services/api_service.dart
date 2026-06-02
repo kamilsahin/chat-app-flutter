@@ -57,6 +57,12 @@ class ApiService {
     return Room.fromJson(res.data);
   }
 
+  /// Karşı kullanıcıyla DIRECT odayı bul/oluştur (profilden "Mesaj yaz").
+  Future<Room> createDirectRoom(String otherUserId) async {
+    final res = await _dio.post('/api/rooms/direct', data: {'userId': otherUserId});
+    return Room.fromJson(res.data);
+  }
+
   // Messages
   Future<List<Message>> getMessages(String roomId, {String? cursor}) async {
     final res = await _dio.get(
@@ -172,5 +178,9 @@ class ApiService {
 
   Future<void> unmuteRoom(String roomId) async {
     await _dio.delete('/api/rooms/$roomId/mute');
+  }
+
+  Future<void> clearHistory(String roomId) async {
+    await _dio.delete('/api/rooms/$roomId/history');
   }
 }

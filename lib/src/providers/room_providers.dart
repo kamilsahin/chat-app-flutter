@@ -47,6 +47,15 @@ class RoomListNotifier extends FamilyAsyncNotifier<List<Room>, RoomType?> {
     });
   }
 
+  /// Loading state göstermeden listeyi tazeler (real-time yeni konuşma için).
+  /// Mevcut liste ekranda kalır, sessizce ilk sayfa yeniden çekilir.
+  Future<void> silentRefresh() async {
+    final result = await ref.read(apiServiceProvider).getRooms(type: _typeParam, page: 0);
+    _hasNext = result.hasNext;
+    _page = 1;
+    state = AsyncData(result.rooms);
+  }
+
   Future<void> loadMore() async {
     if (_loadingMore || !_hasNext) return;
     _loadingMore = true;
@@ -74,10 +83,10 @@ class RoomListNotifier extends FamilyAsyncNotifier<List<Room>, RoomType?> {
 
       state = AsyncData(rooms.map((r) {
         if (r.id != roomId) return r;
-        // Ignore if this message is older than what we already have
-        // (e.g. a reaction update arriving out of order).
+        // Strictly older messages are stale — equal timestamps are fine
+        // (!isAfter ile eşit timestamp'ler de skip ediliyordu, düzeltildi).
         final isStale = r.lastMessageAt != null &&
-            !message.createdAt.isAfter(r.lastMessageAt!);
+            message.createdAt.isBefore(r.lastMessageAt!);
         if (isStale) return r;
 
         String? preview;
@@ -97,6 +106,14 @@ class RoomListNotifier extends FamilyAsyncNotifier<List<Room>, RoomType?> {
       }).toList()
         ..sort((a, b) => (b.lastMessageAt ?? b.createdAt)
             .compareTo(a.lastMessageAt ?? a.createdAt)));
+    });
+  }
+
+  Future<void> clearHistory(String roomId) async {
+    await ref.read(apiServiceProvider).clearHistory(roomId);
+    // Odayı listeden kaldır — kullanıcı için artık içerik yok
+    state.whenData((rooms) {
+      state = AsyncData(rooms.where((r) => r.id != roomId).toList());
     });
   }
 

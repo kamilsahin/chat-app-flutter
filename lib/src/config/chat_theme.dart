@@ -7,6 +7,13 @@ class ChatTheme {
   /// App bar and bottom sheet background
   final Color appBarColor;
 
+  /// Üst AppBar arka planı. Verilmezse [appBarColor] kullanılır.
+  /// Host uygulama markasıyla eşleştirmek için override edilebilir.
+  final Color appBarBackgroundColor;
+
+  /// Üst AppBar üzerindeki başlık ve ikon rengi. Verilmezse [textColor].
+  final Color appBarForegroundColor;
+
   /// Input field and secondary surface background
   final Color inputColor;
 
@@ -42,12 +49,16 @@ class ChatTheme {
     required this.textColor,
     required this.textMutedColor,
     required this.iconColor,
+    required this.appBarBackgroundColor,
+    required this.appBarForegroundColor,
   });
 
   /// Default dark theme — matches the original design
   const ChatTheme.dark()
       : scaffoldColor = const Color(0xFF0F0F0F),
         appBarColor = const Color(0xFF1A1A1A),
+        appBarBackgroundColor = const Color(0xFF1A1A1A),
+        appBarForegroundColor = Colors.white,
         inputColor = const Color(0xFF2A2A2A),
         dividerColor = const Color(0xFF2A2A2A),
         primaryColor = const Color(0xFF4CAF50),
@@ -61,6 +72,8 @@ class ChatTheme {
   const ChatTheme.light()
       : scaffoldColor = const Color(0xFFEEEEEE),
         appBarColor = const Color(0xFFFFFFFF),
+        appBarBackgroundColor = const Color(0xFFFFFFFF),
+        appBarForegroundColor = const Color(0xFF202020),
         inputColor = const Color(0xFFF0F0F0),
         dividerColor = const Color(0xFFE8E8E8),
         primaryColor = const Color(0xFF4CAF50),
@@ -73,6 +86,8 @@ class ChatTheme {
   ChatTheme copyWith({
     Color? scaffoldColor,
     Color? appBarColor,
+    Color? appBarBackgroundColor,
+    Color? appBarForegroundColor,
     Color? inputColor,
     Color? dividerColor,
     Color? primaryColor,
@@ -85,6 +100,8 @@ class ChatTheme {
       ChatTheme(
         scaffoldColor: scaffoldColor ?? this.scaffoldColor,
         appBarColor: appBarColor ?? this.appBarColor,
+        appBarBackgroundColor: appBarBackgroundColor ?? this.appBarBackgroundColor,
+        appBarForegroundColor: appBarForegroundColor ?? this.appBarForegroundColor,
         inputColor: inputColor ?? this.inputColor,
         dividerColor: dividerColor ?? this.dividerColor,
         primaryColor: primaryColor ?? this.primaryColor,

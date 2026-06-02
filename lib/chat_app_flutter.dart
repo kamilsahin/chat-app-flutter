@@ -2,6 +2,8 @@ export 'src/config/chat_config.dart';
 export 'src/config/chat_theme.dart';
 export 'src/screens/room_list/room_list_screen.dart';
 export 'src/screens/room/room_screen.dart';
+export 'src/screens/room/direct_chat_screen.dart';
+export 'src/screens/room/room_by_id_screen.dart';
 export 'src/models/room.dart';
 export 'src/models/message.dart';
 export 'src/models/chat_user.dart';

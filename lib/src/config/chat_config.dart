@@ -12,11 +12,17 @@ class ChatConfig {
   /// Visual theme. Defaults to [ChatTheme.dark] if not provided.
   final ChatTheme theme;
 
+  /// Bir DIRECT sohbette karşı kullanıcının avatarına/appbar'ına tıklanınca
+  /// çağrılır. Host uygulama (ActiZone) bu kullanıcının profiline yönlendirir.
+  /// externalId = sohbetteki karşı kişinin kullanıcı ID'si.
+  final void Function(String externalId)? onUserProfileTap;
+
   const ChatConfig({
     required this.serverUrl,
     required this.jwtToken,
     this.fcmToken,
     this.theme = const ChatTheme.dark(),
+    this.onUserProfileTap,
   });
 
   String get wsUrl => serverUrl.replaceFirst(RegExp(r'^http'), 'ws');

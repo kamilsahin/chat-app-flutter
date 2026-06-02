@@ -1,3 +1,17 @@
+## 0.1.5
+
+- Add `DirectChatScreen` — opens a DIRECT chat by the other user's id (find-or-create the room, then show the room). For "message from profile" flows.
+- Add `RoomByIdScreen` — opens a chat by `roomId` (fetches the room, then shows it). For notification-tap flows.
+- Add `ApiService.createDirectRoom(otherUserId)` and `clearHistory(roomId)`.
+- Add `Room.otherUserId` — the other participant in a DIRECT room (populated by the backend), used for profile navigation.
+- Add `ChatConfig.onUserProfileTap(externalId)` — tapping a room-list avatar or the room app bar invokes this so the host app can navigate to the user's profile.
+- Add `ChatTheme.appBarBackgroundColor` / `appBarForegroundColor` — lets the host brand the top app bar independently of tile/sheet surfaces.
+- Clear chat: `RoomListNotifier.clearHistory` removes the room locally; the room list long-press menu gets a "delete chat" action.
+- Realtime: subscribe to a per-user channel so a new or previously-cleared conversation surfaces at the top without a manual refresh; add `silentRefresh`.
+- Room list now sorts by last activity on every build so incoming messages move a room to the top reliably.
+- STOMP client reconnects automatically (`reconnectDelay`).
+- Dismiss the keyboard on message-list scroll.
+
 ## 0.1.4
 
 - Add `ChatApp.activeRoomId` static getter — exposes the currently open room ID so host apps can suppress in-app notifications for the active room

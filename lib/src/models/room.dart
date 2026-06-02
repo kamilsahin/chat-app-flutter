@@ -41,6 +41,9 @@ class Room {
   final DateTime? lastMessageAt;
   final int unreadCount;
 
+  /// DIRECT odalarda karşı kullanıcının externalId'si (backend doldurur).
+  final String? otherUserId;
+
   const Room({
     required this.id,
     required this.type,
@@ -51,6 +54,7 @@ class Room {
     this.lastMessage,
     this.lastMessageAt,
     this.unreadCount = 0,
+    this.otherUserId,
   });
 
   factory Room.fromJson(Map<String, dynamic> json) => Room(
@@ -67,6 +71,7 @@ class Room {
             ? DateTime.parse(json['lastActivityAt'] as String)
             : null,
         unreadCount: (json['unreadCount'] as num?)?.toInt() ?? 0,
+        otherUserId: json['otherUserId'] as String?,
       );
 
   bool isMuted(String currentUserId) {
@@ -92,5 +97,6 @@ class Room {
         lastMessage: lastMessage ?? this.lastMessage,
         lastMessageAt: lastMessageAt ?? this.lastMessageAt,
         unreadCount: unreadCount ?? this.unreadCount,
+        otherUserId: otherUserId,
       );
 }

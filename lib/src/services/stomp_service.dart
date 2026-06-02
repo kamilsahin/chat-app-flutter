@@ -22,6 +22,9 @@ class StompService {
   final Map<String, List<MessageCallback>> _messageHandlers = {};
   final Map<String, List<TypingCallback>> _typingHandlers = {};
 
+  // Kullanıcıya özel oda-aktivite kanalı (yeni konuşma bildirimi için)
+  StompUnsubscribe? _userRoomsSub;
+
   StompService(this._config);
 
   void connect({required VoidCallback onConnected}) {
@@ -33,8 +36,9 @@ class StompService {
         },
         onConnect: (frame) => onConnected(),
         onDisconnect: (_) {},
-        onStompError: (frame) {},
-        onWebSocketError: (error) {},
+        onStompError: (_) {},
+        onWebSocketError: (_) {},
+        reconnectDelay: const Duration(seconds: 5),
       ),
     );
     _client!.activate();
@@ -45,6 +49,22 @@ class StompService {
     _subscriptions.clear();
     _messageHandlers.clear();
     _typingHandlers.clear();
+    _userRoomsSub = null;
+  }
+
+  /// Kullanıcının kişisel oda-aktivite kanalına abone olur.
+  /// Yeni mesaj gelen oda (yeni konuşma dahil) için roomId döner.
+  void subscribeUserRooms(String userId, void Function(String roomId) onActivity) {
+    if (_userRoomsSub != null) return; // zaten abone
+    _userRoomsSub = _client?.subscribe(
+      destination: '/topic/user.$userId.rooms',
+      callback: (frame) {
+        if (frame.body == null) return;
+        final data = jsonDecode(frame.body!) as Map<String, dynamic>;
+        final roomId = data['roomId'] as String?;
+        if (roomId != null) onActivity(roomId);
+      },
+    );
   }
 
   /// Register handlers for a room. Creates the STOMP subscription on first call;

@@ -25,34 +25,31 @@ class _RoomListScreenState extends ConsumerState<RoomListScreen> {
   bool _stompConnected = false;
   bool _disposed = false;
   bool _initialized = false;
-  late ProviderContainer _container;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     if (_initialized) return;
     _initialized = true;
-    // ProviderScope.containerOf uses dependOnInheritedWidgetOfExactType,
-    // which must be called from didChangeDependencies, not initState.
-    _container = ProviderScope.containerOf(context);
     _connect();
   }
 
   void _connect() {
-    _container
+    ref
         .read(stompServiceProvider)
         .connect(
           onConnected: () {
             if (_disposed) return;
             _stompConnected = true;
             _subscribeToLoadedRooms();
+            _subscribeUserRooms();
           },
         );
   }
 
   void _subscribeToLoadedRooms() {
     if (_disposed || !_stompConnected) return;
-    final rooms = _container.read(roomListProvider(widget.typeFilter)).valueOrNull ?? [];
+    final rooms = ref.read(roomListProvider(widget.typeFilter)).valueOrNull ?? [];
     for (final room in rooms) {
       if (_subscribedRooms.contains(room.id)) continue;
       _subscribedRooms.add(room.id);
@@ -60,19 +57,37 @@ class _RoomListScreenState extends ConsumerState<RoomListScreen> {
     }
   }
 
+  // Kullanıcının kişisel kanalına abone ol — yeni konuşma (listede olmayan oda)
+  // mesajı gelince listeyi yenile, oda en üste gelsin.
+  void _subscribeUserRooms() {
+    if (_disposed || !_stompConnected) return;
+    final userId = ref.read(chatConfigProvider).userId;
+    ref.read(stompServiceProvider).subscribeUserRooms(userId, (roomId) {
+      if (_disposed) return;
+      // _subscribedRooms'a değil, o anki LİSTE durumuna bak: oda görünür listede
+      // varsa room-topic onMsg zaten en üste taşıyor. Listede yoksa (silinmiş
+      // konuşma ya da yepyeni oda) sessizce yenile → oda en üstte geri gelir.
+      final rooms = ref.read(roomListProvider(widget.typeFilter)).valueOrNull ?? [];
+      final inList = rooms.any((r) => r.id == roomId);
+      if (inList) return;
+      ref.read(roomListProvider(widget.typeFilter).notifier).silentRefresh();
+    });
+  }
+
   void _subscribeRoom(String roomId) {
     // Only update the room list tile — message list is managed by RoomScreen.
     void onMsg(Message message) {
       if (_disposed) return;
-      final currentUserId = _container.read(chatConfigProvider).userId;
-      _container
+      // ref kullan — _container stale olabilir (ChatApp re-init durumunda).
+      final currentUserId = ref.read(chatConfigProvider).userId;
+      ref
           .read(roomListProvider(widget.typeFilter).notifier)
           .updateLastMessage(roomId, message, currentUserId);
     }
 
     _msgHandlers[roomId] = onMsg;
 
-    _container
+    ref
         .read(stompServiceProvider)
         .subscribeToRoom(roomId, onMessage: onMsg);
   }
@@ -83,11 +98,12 @@ class _RoomListScreenState extends ConsumerState<RoomListScreen> {
     // Remove our handlers without fully disconnecting (RoomScreen may still
     // have its own handlers for the active room). Then disconnect the client.
     for (final entry in _msgHandlers.entries) {
-      _container
+      ref
           .read(stompServiceProvider)
           .unsubscribeFromRoom(entry.key, onMessage: entry.value);
     }
-    _container.read(stompServiceProvider).disconnect();
+    // disconnect() burada çağrılmıyor — RoomScreen gibi başka
+    // ekranlar hâlâ STOMP'a ihtiyaç duyuyor olabilir.
     super.dispose();
   }
 
@@ -105,12 +121,12 @@ class _RoomListScreenState extends ConsumerState<RoomListScreen> {
       backgroundColor: t.scaffoldColor,
       drawer: widget.drawer,
       appBar: AppBar(
-        backgroundColor: t.appBarColor,
+        backgroundColor: t.appBarBackgroundColor,
         title: Text(
           'Mesajlar',
-          style: TextStyle(color: t.textColor, fontWeight: FontWeight.w600),
+          style: TextStyle(color: t.appBarForegroundColor, fontWeight: FontWeight.w600),
         ),
-        iconTheme: IconThemeData(color: t.textColor),
+        iconTheme: IconThemeData(color: t.appBarForegroundColor),
       ),
       body: filteredAsync.when(
         loading: () => Center(
@@ -130,43 +146,53 @@ class _RoomListScreenState extends ConsumerState<RoomListScreen> {
             ],
           ),
         ),
-        data: (rooms) => rooms.isEmpty
-            ? Center(
-                child: Text(
-                  'Henüz sohbet yok',
-                  style: TextStyle(color: t.textMutedColor),
-                ),
-              )
-            : RefreshIndicator(
-                color: t.primaryColor,
-                onRefresh: () => ref.read(roomListProvider(widget.typeFilter).notifier).refresh(),
-                child: NotificationListener<ScrollNotification>(
-                  onNotification: (n) {
-                    if (n is ScrollEndNotification &&
-                        n.metrics.pixels >= n.metrics.maxScrollExtent - 100) {
-                      ref.read(roomListProvider(widget.typeFilter).notifier).loadMore();
-                    }
-                    return false;
-                  },
-                  child: ListView.builder(
-                    itemCount: rooms.length +
-                        (ref.watch(roomListProvider(widget.typeFilter).notifier).hasMore ? 1 : 0),
-                    itemBuilder: (context, i) {
-                      if (i == rooms.length) {
-                        return Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: Center(child: CircularProgressIndicator(color: t.primaryColor)),
-                        );
-                      }
-                      return _RoomTile(
-                        room: rooms[i],
-                        currentUserId: ref.read(chatConfigProvider).userId,
-                        typeFilter: widget.typeFilter,
-                      );
-                    },
-                  ),
-                ),
+        data: (rooms) {
+          // Her render'da son mesaja göre sırala — WebSocket güncellemesi
+          // sonrası oda en üste taşınsın.
+          final sorted = [...rooms]
+            ..sort((a, b) => (b.lastMessageAt ?? b.createdAt)
+                .compareTo(a.lastMessageAt ?? a.createdAt));
+
+          if (sorted.isEmpty) {
+            return Center(
+              child: Text(
+                'Henüz sohbet yok',
+                style: TextStyle(color: t.textMutedColor),
               ),
+            );
+          }
+
+          return RefreshIndicator(
+            color: t.primaryColor,
+            onRefresh: () => ref.read(roomListProvider(widget.typeFilter).notifier).refresh(),
+            child: NotificationListener<ScrollNotification>(
+              onNotification: (n) {
+                if (n is ScrollEndNotification &&
+                    n.metrics.pixels >= n.metrics.maxScrollExtent - 100) {
+                  ref.read(roomListProvider(widget.typeFilter).notifier).loadMore();
+                }
+                return false;
+              },
+              child: ListView.builder(
+                itemCount: sorted.length +
+                    (ref.watch(roomListProvider(widget.typeFilter).notifier).hasMore ? 1 : 0),
+                itemBuilder: (context, i) {
+                  if (i == sorted.length) {
+                    return Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Center(child: CircularProgressIndicator(color: t.primaryColor)),
+                    );
+                  }
+                  return _RoomTile(
+                    room: sorted[i],
+                    currentUserId: ref.read(chatConfigProvider).userId,
+                    typeFilter: widget.typeFilter,
+                  );
+                },
+              ),
+            ),
+          );
+        },
       ),
     );
   }
@@ -198,6 +224,7 @@ class _RoomTile extends ConsumerWidget {
                 typeFilter: typeFilter,
                 roomType: room.type,
                 avatarUrl: room.avatarUrl,
+                otherUserId: room.otherUserId,
               ),
             ),
           ),
@@ -217,8 +244,11 @@ class _RoomTile extends ConsumerWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            // Avatar
-            _Avatar(room: room, hasUnread: hasUnread),
+            // Avatar — DIRECT sohbette karşı kişinin profiline gider
+            GestureDetector(
+              onTap: () => _openProfile(ref),
+              child: _Avatar(room: room, hasUnread: hasUnread),
+            ),
             const SizedBox(width: 12),
 
             // Name + last message
@@ -312,6 +342,14 @@ class _RoomTile extends ConsumerWidget {
     );
   }
 
+  /// DIRECT sohbette karşı kullanıcının profilini açar (host callback'i ile).
+  void _openProfile(WidgetRef ref) {
+    if (room.type != RoomType.direct) return;
+    final otherId = room.otherUserId;
+    if (otherId == null) return;
+    ref.read(chatConfigProvider).onUserProfileTap?.call(otherId);
+  }
+
   void _showMuteSheet(BuildContext context, WidgetRef ref, bool muted) {
     final t = context.chatTheme;
     showModalBottomSheet(
@@ -345,6 +383,7 @@ class _RoomTile extends ConsumerWidget {
                   },
                 ),
               ] else ...[
+
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                   child: Align(
@@ -362,10 +401,49 @@ class _RoomTile extends ConsumerWidget {
                 _MuteOption(label: 'Kalıcı olarak sessize al', icon: Icons.notifications_off,
                     onTap: () { Navigator.pop(context); ref.read(roomListProvider(typeFilter).notifier).muteRoom(room.id, currentUserId); }),
               ],
+              Divider(color: t.dividerColor, height: 1),
+              ListTile(
+                leading: const Icon(Icons.delete_sweep_outlined, color: Colors.redAccent),
+                title: const Text('Sohbeti sil', style: TextStyle(color: Colors.redAccent)),
+                onTap: () => _confirmClearHistory(context, ref),
+              ),
               const SizedBox(height: 8),
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  void _confirmClearHistory(BuildContext context, WidgetRef ref) {
+    final t = context.chatTheme;
+    showDialog(
+      context: context,
+      useRootNavigator: false, // sheet ile aynı navigator → pop() doğru çalışır
+      builder: (dialogCtx) => AlertDialog(
+        backgroundColor: t.appBarColor,
+        title: Text('Sohbeti sil', style: TextStyle(color: t.textColor)),
+        content: Text(
+          'Bu sohbetin tüm geçmişi senin için silinecek. Karşı taraf mesajları görmeye devam eder.',
+          style: TextStyle(color: t.textMutedColor),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogCtx),
+            child: Text('İptal', style: TextStyle(color: t.textMutedColor)),
+          ),
+          TextButton(
+            onPressed: () {
+              // ref ve nav'ı pop öncesi al — sonra widget dispose olur
+              final notifier = ref.read(roomListProvider(typeFilter).notifier);
+              Navigator.of(dialogCtx)
+                ..pop()  // dialog kapat
+                ..pop(); // sheet kapat
+              notifier.clearHistory(room.id);
+            },
+            child: const Text('Sil', style: TextStyle(color: Colors.redAccent)),
+          ),
+        ],
       ),
     );
   }
