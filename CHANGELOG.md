@@ -1,3 +1,15 @@
+## 0.1.6
+
+- STOMP reconnect: subscriptions are re-established after connection drop; pending callbacks are queued safely.
+- App resume: STOMP reconnects immediately when the app comes to foreground instead of waiting for the next retry interval.
+- FCM token registration: `ChatConfig.fcmToken` is sent to the backend on init so push notifications work.
+- Active room tracking: `ChatApp.setActiveRoom` / `refreshActiveRoom` allow the host app to clear and restore the active room (e.g. when navigating to a profile screen).
+- Message list refresh: `MessageListNotifier.refresh()` re-fetches from the API; called on room open and on FCM delivery to recover messages STOMP may have missed.
+- `addMessage` works during refresh (`AsyncLoading`) — STOMP messages are no longer lost during a concurrent refresh.
+- Typing indicator: self-typing events are filtered out so the sender never sees their own "typing…" indicator.
+- Pull-to-refresh: swipe down on the message list to reload from the backend.
+- Bug fix: `refresh()` has a 15-second timeout to prevent indefinite hangs on network errors.
+
 ## 0.1.5
 
 - Add `DirectChatScreen` — opens a DIRECT chat by the other user's id (find-or-create the room, then show the room). For "message from profile" flows.
