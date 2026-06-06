@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:stomp_dart_client/stomp_dart_client.dart';
 import '../config/chat_config.dart';
 import '../models/message.dart';
@@ -22,68 +23,86 @@ class StompService {
   final Map<String, List<MessageCallback>> _messageHandlers = {};
   final Map<String, List<TypingCallback>> _typingHandlers = {};
 
-  // Kullanıcıya özel oda-aktivite kanalı (yeni konuşma bildirimi için)
+  // Kullanıcının kişisel oda-aktivite kanalı için callback (reconnect'te yeniden abone olmak için)
+  String? _userRoomsUserId;
+  void Function(String roomId)? _userRoomsCallback;
   StompUnsubscribe? _userRoomsSub;
+
+  // Callbacks waiting for the first successful connect.
+  // Cleared after first connect; reconnects only call _resubscribeAll().
+  final List<VoidCallback> _pendingConnectCallbacks = [];
 
   StompService(this._config);
 
   void connect({required VoidCallback onConnected}) {
+    // Already connected — call onConnected immediately.
+    if (_client?.connected ?? false) {
+      onConnected();
+      return;
+    }
+
+    // Queue the callback; it will be called when the connection succeeds.
+    _pendingConnectCallbacks.add(onConnected);
+
+    // Client is already activating (not yet connected) — just wait.
+    if (_client != null) return;
+
+    // Deactivate any stale client before creating a new one.
+    _subscriptions.clear();
+    _userRoomsSub = null;
+
+    debugPrint('[STOMP] Bağlanıyor → ${_config.serverUrl}/ws');
     _client = StompClient(
       config: StompConfig.sockJS(
         url: '${_config.serverUrl}/ws',
         stompConnectHeaders: {
           'Authorization': 'Bearer ${_config.jwtToken}',
         },
-        onConnect: (frame) => onConnected(),
-        onDisconnect: (_) {},
-        onStompError: (_) {},
-        onWebSocketError: (_) {},
+        onConnect: _handleConnected,
+        onDisconnect: _handleDisconnected,
+        onStompError: (frame) => debugPrint('[STOMP] STOMP hata: ${frame.body}'),
+        onWebSocketError: (e) => debugPrint('[STOMP] WebSocket hata: $e'),
+        onWebSocketDone: () => debugPrint('[STOMP] WebSocket kapandı'),
         reconnectDelay: const Duration(seconds: 5),
       ),
     );
     _client!.activate();
   }
 
-  void disconnect() {
-    _client?.deactivate();
+  void _handleConnected(StompFrame frame) {
+    debugPrint('[STOMP] ✓ Bağlandı — aktif oda sayısı: ${_messageHandlers.length}');
+    _resubscribeAll();
+    // Drain pending callbacks (first connect only; reconnects skip this).
+    final callbacks = List.of(_pendingConnectCallbacks);
+    _pendingConnectCallbacks.clear();
+    for (final cb in callbacks) cb();
+  }
+
+  void _handleDisconnected(StompFrame frame) {
+    debugPrint('[STOMP] ✗ Bağlantı koptu — ${_subscriptions.length} subscription temizlendi');
+    // Subscription references are now invalid. Clear them so subscribeToRoom()
+    // will create fresh ones when the client reconnects.
     _subscriptions.clear();
-    _messageHandlers.clear();
-    _typingHandlers.clear();
     _userRoomsSub = null;
   }
 
-  /// Kullanıcının kişisel oda-aktivite kanalına abone olur.
-  /// Yeni mesaj gelen oda (yeni konuşma dahil) için roomId döner.
-  void subscribeUserRooms(String userId, void Function(String roomId) onActivity) {
-    if (_userRoomsSub != null) return; // zaten abone
-    _userRoomsSub = _client?.subscribe(
-      destination: '/topic/user.$userId.rooms',
-      callback: (frame) {
-        if (frame.body == null) return;
-        final data = jsonDecode(frame.body!) as Map<String, dynamic>;
-        final roomId = data['roomId'] as String?;
-        if (roomId != null) onActivity(roomId);
-      },
-    );
+  /// Re-opens STOMP subscriptions for all rooms that have active handlers.
+  /// Called on every (re)connect so no messages are missed after a drop.
+  void _resubscribeAll() {
+    debugPrint('[STOMP] _resubscribeAll → ${_messageHandlers.length} oda');
+    for (final roomId in _messageHandlers.keys.toList()) {
+      _openRoomSubscription(roomId);
+    }
+    // Re-subscribe to the user-rooms channel if it was active.
+    if (_userRoomsUserId != null && _userRoomsCallback != null) {
+      _userRoomsSub = null; // ensure it's recreated
+      _openUserRoomsSubscription(_userRoomsUserId!, _userRoomsCallback!);
+    }
   }
 
-  /// Register handlers for a room. Creates the STOMP subscription on first call;
-  /// subsequent calls for the same room just add handlers.
-  void subscribeToRoom(
-    String roomId, {
-    MessageCallback? onMessage,
-    TypingCallback? onTyping,
-    PresenceCallback? onPresence,
-  }) {
-    if (onMessage != null) {
-      (_messageHandlers[roomId] ??= []).add(onMessage);
-    }
-    if (onTyping != null) {
-      (_typingHandlers[roomId] ??= []).add(onTyping);
-    }
-
-    // STOMP subscription already exists — handlers registered above, done.
+  void _openRoomSubscription(String roomId) {
     if (_subscriptions.containsKey(roomId)) return;
+    debugPrint('[STOMP] Subscribe → room.$roomId (handlers: ${_messageHandlers[roomId]?.length ?? 0})');
 
     final subs = <StompUnsubscribe>[];
 
@@ -115,6 +134,57 @@ class StompService {
     ));
 
     _subscriptions[roomId] = subs;
+  }
+
+  void _openUserRoomsSubscription(String userId, void Function(String roomId) onActivity) {
+    if (_userRoomsSub != null) return;
+    _userRoomsSub = _client?.subscribe(
+      destination: '/topic/user.$userId.rooms',
+      callback: (frame) {
+        if (frame.body == null) return;
+        final data = jsonDecode(frame.body!) as Map<String, dynamic>;
+        final roomId = data['roomId'] as String?;
+        if (roomId != null) onActivity(roomId);
+      },
+    );
+  }
+
+  void disconnect() {
+    _client?.deactivate();
+    _client = null;
+    _subscriptions.clear();
+    _messageHandlers.clear();
+    _typingHandlers.clear();
+    _pendingConnectCallbacks.clear();
+    _userRoomsSub = null;
+    _userRoomsUserId = null;
+    _userRoomsCallback = null;
+  }
+
+  /// Kullanıcının kişisel oda-aktivite kanalına abone olur.
+  /// Yeni mesaj gelen oda (yeni konuşma dahil) için roomId döner.
+  void subscribeUserRooms(String userId, void Function(String roomId) onActivity) {
+    _userRoomsUserId = userId;
+    _userRoomsCallback = onActivity;
+    _openUserRoomsSubscription(userId, onActivity);
+  }
+
+  /// Register handlers for a room. Creates the STOMP subscription on first call;
+  /// subsequent calls for the same room just add handlers.
+  void subscribeToRoom(
+    String roomId, {
+    MessageCallback? onMessage,
+    TypingCallback? onTyping,
+    PresenceCallback? onPresence,
+  }) {
+    if (onMessage != null) {
+      (_messageHandlers[roomId] ??= []).add(onMessage);
+    }
+    if (onTyping != null) {
+      (_typingHandlers[roomId] ??= []).add(onTyping);
+    }
+
+    _openRoomSubscription(roomId);
   }
 
   /// Remove specific handlers for a room. Tears down the STOMP subscription

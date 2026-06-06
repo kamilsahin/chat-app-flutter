@@ -187,19 +187,35 @@ class MessageListNotifier
   }
 
   void addMessage(Message message) {
-    state.whenData((messages) {
-      // Reaction/edit updates arrive on the same STOMP topic as new messages.
-      // If a message with this id already exists, update it in place instead
-      // of prepending a duplicate.
-      final idx = messages.indexWhere((m) => m.id == message.id);
-      if (idx != -1) {
-        final copy = List<Message>.from(messages);
-        copy[idx] = message;
-        state = AsyncData(copy);
-      } else {
-        state = AsyncData([message, ...messages]);
-      }
-    });
+    // state.whenData no-op'tur AsyncLoading/AsyncError'da.
+    // Mevcut veriyi valueOrNull ile al — refresh sırasında da çalışır.
+    final current = state.valueOrNull;
+    if (current == null) return;
+    // Reaction/edit updates arrive on the same STOMP topic as new messages.
+    // If a message with this id already exists, update it in place instead
+    // of prepending a duplicate.
+    final idx = current.indexWhere((m) => m.id == message.id);
+    if (idx != -1) {
+      final copy = List<Message>.from(current);
+      copy[idx] = message;
+      state = AsyncData(copy);
+    } else {
+      state = AsyncData([message, ...current]);
+    }
+  }
+
+  /// API'dan en güncel mesajları yeniden çeker.
+  /// Yalnızca cache'li veri varsa (AsyncData) invalidate eder;
+  /// provider zaten yükleniyorsa (ilk açılış) dokunmaz → race condition önlenir.
+  Future<void> refresh() async {
+    if (state is! AsyncData) return;
+    _hasMore = true;
+    ref.invalidateSelf();
+    // Timeout ekle — ağ hatasında caller sonsuza kadar beklemesin.
+    await future.timeout(
+      const Duration(seconds: 15),
+      onTimeout: () => state.valueOrNull ?? [],
+    );
   }
 
   void updateMessage(Message updated) {

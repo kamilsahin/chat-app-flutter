@@ -35,16 +35,21 @@ class _RoomListScreenState extends ConsumerState<RoomListScreen> {
   }
 
   void _connect() {
-    ref
-        .read(stompServiceProvider)
-        .connect(
-          onConnected: () {
-            if (_disposed) return;
-            _stompConnected = true;
-            _subscribeToLoadedRooms();
-            _subscribeUserRooms();
-          },
-        );
+    final stomp = ref.read(stompServiceProvider);
+    if (stomp.isConnected) {
+      _stompConnected = true;
+      _subscribeToLoadedRooms();
+      _subscribeUserRooms();
+      return;
+    }
+    stomp.connect(
+      onConnected: () {
+        if (_disposed) return;
+        _stompConnected = true;
+        _subscribeToLoadedRooms();
+        _subscribeUserRooms();
+      },
+    );
   }
 
   void _subscribeToLoadedRooms() {

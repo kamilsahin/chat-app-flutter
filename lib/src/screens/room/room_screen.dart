@@ -83,6 +83,10 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
       }
     };
     _onTyping = (userId, typing) {
+      // Kendi typing event'imizi gösterme — sadece karşı taraf yazdığında göster.
+      // _container null ise myId null olur; null guard ile karşılaştırma yap.
+      final myId = _container?.read(chatConfigProvider).userId;
+      if (myId != null && userId == myId) return;
       _container
           ?.read(typingProvider(widget.roomId).notifier)
           .setTyping(userId, typing);
@@ -126,6 +130,9 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
         // Mark all messages as read on the backend so the next room-list
         // fetch reflects the correct unread count.
         _container?.read(apiServiceProvider).markRoomAsRead(widget.roomId).ignore();
+        // Refresh message list to pick up any messages that arrived while
+        // STOMP was disconnected or before the subscription was established.
+        _container?.read(messageListProvider(widget.roomId).notifier).refresh();
       }
     });
   }
@@ -501,7 +508,12 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
                   style: const TextStyle(color: Colors.white70),
                 ),
               ),
-              data: (messages) => ListView.builder(
+              data: (messages) => RefreshIndicator(
+                onRefresh: () => _container
+                        ?.read(messageListProvider(widget.roomId).notifier)
+                        .refresh() ??
+                    Future.value(),
+                child: ListView.builder(
                 controller: _scrollController,
                 reverse: true,
                 keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
@@ -554,6 +566,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
                     ],
                   );
                 },
+              ),
               ),
             ),
           ),

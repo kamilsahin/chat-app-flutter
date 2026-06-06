@@ -63,6 +63,22 @@ class ChatApp {
   /// NotificationService gibi dışarıdan okuyanlar için.
   static String? get activeRoomId => _container?.read(activeRoomProvider);
 
+  /// Aktif oda ID'sini dışarıdan günceller.
+  /// Örn: host app profil ekranına geçişte aktif odayı temizler,
+  /// profil kapanınca geri yükler.
+  static void setActiveRoom(String? roomId) {
+    _container?.read(activeRoomProvider.notifier).state = roomId;
+  }
+
+  /// Aktif odanın mesaj listesini API'dan yeniden çeker.
+  /// FCM odadaki mesajı bildirdiğinde ama STOMP henüz subscribe olmamışsa
+  /// çağrılır; STOMP'un kaçırdığı mesajları yakalamak için.
+  static void refreshActiveRoom() {
+    final roomId = activeRoomId;
+    if (roomId == null) return;
+    _container?.read(messageListProvider(roomId).notifier).refresh();
+  }
+
   /// ChatConfig'de tanımlanan tema primary rengi.
   /// Bildirim overlay'i gibi dış bileşenler tema rengini buradan okur.
   static Color? get notificationColor =>
@@ -77,16 +93,41 @@ class _ChatInitWidget extends ConsumerStatefulWidget {
   ConsumerState<_ChatInitWidget> createState() => _ChatInitWidgetState();
 }
 
-class _ChatInitWidgetState extends ConsumerState<_ChatInitWidget> {
+class _ChatInitWidgetState extends ConsumerState<_ChatInitWidget>
+    with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      // Start STOMP connection as soon as chat is initialized.
+      // This covers notification-tap flows where RoomListScreen is never shown.
+      ref.read(stompServiceProvider).connect(onConnected: () {});
+
       final config = ref.read(chatConfigProvider);
       if (config.fcmToken != null) {
         ref.read(apiServiceProvider).updateFcmToken(config.fcmToken!).ignore();
       }
     });
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  /// Uygulama ön plana gelince STOMP bağlı değilse hemen reconnect et.
+  /// Android'de OS arka planda WebSocket'i kapatıyor; 5 saniyelik otomatik
+  /// retry beklemek yerine resume anında bağlantıyı yenile.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      final stomp = ref.read(stompServiceProvider);
+      if (!stomp.isConnected) {
+        stomp.connect(onConnected: () {});
+      }
+    }
   }
 
   @override
