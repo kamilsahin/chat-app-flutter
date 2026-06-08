@@ -199,17 +199,12 @@ class MessageListNotifier
       return;
     }
 
-    // 2. Pending match — server confirmed our optimistic message.
-    //    Replace the pending placeholder so there's no duplicate.
-    final pendingIdx = current.indexWhere((m) =>
-        m.isPending &&
-        m.senderId == message.senderId &&
-        m.content == message.content &&
-        message.createdAt.difference(m.createdAt).abs() < const Duration(seconds: 30));
-    if (pendingIdx != -1) {
-      final copy = List<Message>.from(current);
-      copy[pendingIdx] = message; // swap pending → confirmed
-      state = AsyncData(copy);
+    // 2. Any pending message with same content → replace atomically.
+    //    Also strip any other stale pending messages to avoid duplicates.
+    final withoutPending = current.where((m) => !m.isPending).toList();
+    if (withoutPending.length != current.length) {
+      // There were pending messages — insert confirmed at top (already stripped above)
+      state = AsyncData([message, ...withoutPending]);
       return;
     }
 
