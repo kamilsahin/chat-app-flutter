@@ -1,3 +1,7 @@
+## 0.1.7
+
+- Optimistic UI: sent messages appear instantly on screen before server confirmation, then seamlessly replaced by the confirmed message.
+
 ## 0.1.6
 
 - STOMP reconnect: subscriptions are re-established after connection drop; pending callbacks are queued safely.
