@@ -1,6 +1,6 @@
 name: chat_app_flutter
 description: "Flutter chat package for chat-app backend. Real-time messaging with WebSocket/STOMP."
-version: 0.1.6
+version: 0.1.7
 homepage: https://github.com/kamilsahin/chat-app-flutter
 
 environment:

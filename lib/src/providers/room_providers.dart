@@ -187,21 +187,41 @@ class MessageListNotifier
   }
 
   void addMessage(Message message) {
-    // state.whenData no-op'tur AsyncLoading/AsyncError'da.
-    // Mevcut veriyi valueOrNull ile al — refresh sırasında da çalışır.
     final current = state.valueOrNull;
     if (current == null) return;
-    // Reaction/edit updates arrive on the same STOMP topic as new messages.
-    // If a message with this id already exists, update it in place instead
-    // of prepending a duplicate.
+
+    // 1. Exact id match — reaction/edit update, replace in place.
     final idx = current.indexWhere((m) => m.id == message.id);
     if (idx != -1) {
       final copy = List<Message>.from(current);
       copy[idx] = message;
       state = AsyncData(copy);
-    } else {
-      state = AsyncData([message, ...current]);
+      return;
     }
+
+    // 2. Pending match — server confirmed our optimistic message.
+    //    Replace the pending placeholder so there's no duplicate.
+    final pendingIdx = current.indexWhere((m) =>
+        m.isPending &&
+        m.senderId == message.senderId &&
+        m.content == message.content &&
+        message.createdAt.difference(m.createdAt).abs() < const Duration(seconds: 30));
+    if (pendingIdx != -1) {
+      final copy = List<Message>.from(current);
+      copy[pendingIdx] = message; // swap pending → confirmed
+      state = AsyncData(copy);
+      return;
+    }
+
+    // 3. New message from someone else (or our own from another device).
+    state = AsyncData([message, ...current]);
+  }
+
+  /// Adds a temporary optimistic message immediately (before server confirms).
+  void addPendingMessage(Message message) {
+    final current = state.valueOrNull;
+    if (current == null) return;
+    state = AsyncData([message, ...current]);
   }
 
   /// API'dan en güncel mesajları yeniden çeker.

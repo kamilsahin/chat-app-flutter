@@ -47,6 +47,8 @@ class Message {
   final MessageLocation? location;
   final bool isPinned;
   final DateTime createdAt;
+  /// True for locally-created optimistic messages not yet confirmed by the server.
+  final bool isPending;
 
   const Message({
     required this.id,
@@ -65,6 +67,7 @@ class Message {
     this.location,
     this.isPinned = false,
     required this.createdAt,
+    this.isPending = false,
   });
 
   factory Message.fromJson(Map<String, dynamic> json) => Message(
@@ -104,7 +107,7 @@ class Message {
 
   bool isReadBy(String userId) => readByUserIds.contains(userId);
 
-  Message copyWith({List<MessageReaction>? reactions, List<String>? readByUserIds}) =>
+  Message copyWith({List<MessageReaction>? reactions, List<String>? readByUserIds, bool? isPending}) =>
       Message(
         id: id,
         roomId: roomId,
@@ -122,5 +125,6 @@ class Message {
         location: location,
         isPinned: isPinned,
         createdAt: createdAt,
+        isPending: isPending ?? this.isPending,
       );
 }

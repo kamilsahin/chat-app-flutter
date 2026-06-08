@@ -187,6 +187,20 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
 
     if (text.isEmpty) return;
 
+    // Optimistic UI: add message immediately, server confirmation replaces it.
+    final myId = _container?.read(chatConfigProvider).userId ?? '';
+    final pending = Message(
+      id: 'pending_${DateTime.now().millisecondsSinceEpoch}',
+      roomId: widget.roomId,
+      senderId: myId,
+      type: MessageType.text,
+      content: text,
+      replyTo: _replyingTo?.id,
+      createdAt: DateTime.now(),
+      isPending: true,
+    );
+    _container?.read(messageListProvider(widget.roomId).notifier).addPendingMessage(pending);
+
     ref
         .read(stompServiceProvider)
         .sendMessage(widget.roomId, text, replyTo: _replyingTo?.id);
@@ -547,7 +561,9 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
                     children: [
                       if (showSeparator)
                         _DateSeparator(date: msg.createdAt),
-                      MessageBubble(
+                      Opacity(
+                        opacity: msg.isPending ? 0.6 : 1.0,
+                        child: MessageBubble(
                         key: bubbleKey,
                         message: msg,
                         isMe: isMe,
@@ -562,6 +578,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
                         onReplyTap: _scrollToMessage,
                         onEdit: _editMessage,
                         onDelete: _deleteMessage,
+                      ),
                       ),
                     ],
                   );
