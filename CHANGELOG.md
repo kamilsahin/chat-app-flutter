@@ -1,3 +1,7 @@
+## 0.1.8
+
+- Optimistic UI fix: duplicate message flash eliminated — pending message is atomically replaced by the confirmed one in a single state update.
+
 ## 0.1.7
 
 - Optimistic UI: sent messages appear instantly on screen before server confirmation, then seamlessly replaced by the confirmed message.
