@@ -553,8 +553,11 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
                   // Show a date separator above the OLDEST message of each day.
                   // That's when this message is older-day than the next item (i+1),
                   // or when this IS the very oldest message (i == messages.length-1).
-                  final showSeparator = i == messages.length - 1 ||
-                      !_isSameDay(msg.createdAt, messages[i + 1].createdAt);
+                  // Pending messages don't show a separator — they're temporary
+                  // and would cause the separator to flash when replaced.
+                  final showSeparator = !msg.isPending && (
+                      i == messages.length - 1 ||
+                      !_isSameDay(msg.createdAt, messages[i + 1].createdAt));
 
                   return Column(
                     mainAxisSize: MainAxisSize.min,

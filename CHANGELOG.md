@@ -1,3 +1,7 @@
+## 0.1.9
+
+- Optimistic UI: date separator no longer flashes when sending a message.
+
 ## 0.1.8
 
 - Optimistic UI fix: duplicate message flash eliminated — pending message is atomically replaced by the confirmed one in a single state update.
