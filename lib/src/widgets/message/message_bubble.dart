@@ -22,6 +22,11 @@ class MessageBubble extends StatefulWidget {
   /// is hidden (useful for 1-1 direct chats where the sender is obvious).
   final bool showSenderAvatar;
 
+  /// Tikleri monoton tutmak için: bu mesajdan daha yeni, onaylanmış bir
+  /// mesajım varsa true. Mesaj pending olsa bile çift tık (gönderildi) gösterilir
+  /// — sonraki mesaj gittiyse önceki de gitmiştir.
+  final bool forceSent;
+
   const MessageBubble({
     super.key,
     required this.message,
@@ -35,6 +40,7 @@ class MessageBubble extends StatefulWidget {
     this.onDelete,
     this.serverUrl = '',
     this.showSenderAvatar = true,
+    this.forceSent = false,
   });
 
   @override
@@ -131,11 +137,7 @@ class MessageBubbleState extends State<MessageBubble> {
                         ),
                     ],
                   ),
-                  SizedBox(height: hasReactions ? 14 : 2),
-                  Text(
-                    _formatTime(widget.message.createdAt),
-                    style: TextStyle(color: t.textMutedColor, fontSize: 10),
-                  ),
+                  if (hasReactions) const SizedBox(height: 14),
                 ],
               ),
             ),
@@ -148,16 +150,28 @@ class MessageBubbleState extends State<MessageBubble> {
   Widget _buildContent(BuildContext context) {
     final t = context.chatTheme;
     if (widget.message.isDeleted) {
-      return Text(
-        'Bu mesaj silindi',
-        style: TextStyle(
-            color: t.textMutedColor,
-            fontStyle: FontStyle.italic,
-            fontSize: 14),
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          Text(
+            'Bu mesaj silindi',
+            style: TextStyle(
+                color: t.textMutedColor,
+                fontStyle: FontStyle.italic,
+                fontSize: 14),
+          ),
+          const SizedBox(width: 6),
+          _footer(t),
+        ],
       );
     }
 
-    return Column(
+    // IntrinsicWidth → bubble en geniş çocuğa göre küçülür: kısa mesajda saat
+    // genişliği kadar dar kalır, uzun mesajda maxWidth'e kadar büyür. Align ile
+    // saat her durumda sağ altta. (Align tek başına tüm genişliği zorluyordu.)
+    return IntrinsicWidth(
+      child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         if (widget.replyToMessage != null)
@@ -185,11 +199,21 @@ class MessageBubbleState extends State<MessageBubble> {
               ),
             ),
           ),
+        // TEXT: saat metinle aynı satıra akar (sığarsa yan yana, sığmazsa
+        // alta sağa). Wrap + IntrinsicWidth ile kısa mesaj kompakt kalır.
         if (widget.message.type == MessageType.text)
-          _LinkText(
-            text: widget.message.content ?? '',
-            style: TextStyle(color: t.textColor, fontSize: 15),
-            linkColor: t.primaryColor,
+          Wrap(
+            alignment: WrapAlignment.end,
+            crossAxisAlignment: WrapCrossAlignment.end,
+            children: [
+              _LinkText(
+                text: widget.message.content ?? '',
+                style: TextStyle(color: t.textColor, fontSize: 15),
+                linkColor: t.primaryColor,
+              ),
+              const SizedBox(width: 8),
+              _footer(t),
+            ],
           ),
         if (widget.message.type == MessageType.image &&
             widget.message.imageUrl != null) ...[
@@ -227,12 +251,40 @@ class MessageBubbleState extends State<MessageBubble> {
                 linkColor: t.primaryColor,
               ),
             ),
+          // Resimde saat altta sağda.
+          Align(
+            alignment: Alignment.centerRight,
+            child: Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: _footer(t),
+            ),
+          ),
         ],
-        if (widget.message.isEdited)
+      ],
+      ),
+    );
+  }
+
+  /// Bubble içi alt-bilgi: (düzenlendi ·) saat (· tık).
+  Widget _footer(ChatTheme t) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (widget.message.isEdited && !widget.message.isDeleted) ...[
           Text(
             'düzenlendi',
             style: TextStyle(color: t.textMutedColor, fontSize: 10),
           ),
+          const SizedBox(width: 4),
+        ],
+        Text(
+          _formatTime(widget.message.createdAt),
+          style: TextStyle(color: t.textMutedColor, fontSize: 10),
+        ),
+        if (widget.isMe && !widget.message.isDeleted) ...[
+          const SizedBox(width: 3),
+          _buildStatusTick(t),
+        ],
       ],
     );
   }
@@ -335,6 +387,24 @@ class MessageBubbleState extends State<MessageBubble> {
 
   String _formatTime(DateTime time) {
     return '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
+  }
+
+  /// Kendi mesajım için durum tiki:
+  /// - pending (gönderiliyor)      → tek tık, soluk
+  /// - sunucu onayladı (gönderildi) → çift tık, soluk
+  /// - karşı taraf okudu            → çift tık, mavi (primary)
+  Widget _buildStatusTick(ChatTheme t) {
+    // Daha yeni bir mesajım onaylandıysa bu da gönderilmiştir → çift tık.
+    if (widget.message.isPending && !widget.forceSent) {
+      return Icon(Icons.check, size: 13, color: t.textMutedColor);
+    }
+    final readByOther = widget.message.readByUserIds
+        .any((id) => id != widget.currentUserId);
+    return Icon(
+      Icons.done_all,
+      size: 13,
+      color: readByOther ? t.primaryColor : t.textMutedColor,
+    );
   }
 }
 

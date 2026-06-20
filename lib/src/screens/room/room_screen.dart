@@ -48,6 +48,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
   final _scrollController = ScrollController();
   Message? _replyingTo;
   Timer? _typingTimer;
+  Timer? _reconcileTimer;
   bool _isTyping = false;
   bool _uploading = false;
   bool _initialized = false;
@@ -116,13 +117,15 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
     // being watched (and therefore initialized) by build().
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
-        _container
-            ?.read(stompServiceProvider)
-            .subscribeToRoom(
-              widget.roomId,
-              onMessage: _onMessage,
-              onTyping: _onTyping,
-            );
+        final stomp = _container?.read(stompServiceProvider);
+        // Bağlantıyı garantile — RoomScreen bildirimden/profilden tek başına
+        // (chat listesi açılmadan) gelmiş olabilir; connect() idempotent.
+        stomp?.connect(onConnected: () {});
+        stomp?.subscribeToRoom(
+          widget.roomId,
+          onMessage: _onMessage,
+          onTyping: _onTyping,
+        );
         _container?.read(activeRoomProvider.notifier).state = widget.roomId;
         _container
             ?.read(roomListProvider(widget.typeFilter).notifier)
@@ -163,6 +166,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
     _controller.dispose();
     _scrollController.dispose();
     _typingTimer?.cancel();
+    _reconcileTimer?.cancel();
     super.dispose();
   }
 
@@ -209,6 +213,22 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
     setState(() => _replyingTo = null);
     _stopTyping();
     _scrollToBottom();
+    _scheduleReconcile();
+  }
+
+  /// STOMP echo bazen (SockJS polling / bağlantı kopması) gönderene geri gelmez
+  /// ve mesaj pending (tek tık) kalır. Birkaç saniye sonra hâlâ pending varsa
+  /// sunucudan merge-refresh ile doğrula (çift tığa döner) — kullanıcı çıkıp
+  /// girmek zorunda kalmasın.
+  void _scheduleReconcile() {
+    _reconcileTimer?.cancel();
+    _reconcileTimer = Timer(const Duration(seconds: 4), () {
+      if (!mounted) return;
+      final msgs = _container?.read(messageListProvider(widget.roomId)).valueOrNull;
+      if (msgs != null && msgs.any((m) => m.isPending)) {
+        _container?.read(messageListProvider(widget.roomId).notifier).refresh();
+      }
+    });
   }
 
   Future<void> _editMessage(Message message) async {
@@ -522,7 +542,18 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
                   style: const TextStyle(color: Colors.white70),
                 ),
               ),
-              data: (messages) => RefreshIndicator(
+              data: (messages) {
+                // Monoton tik: en yeni ONAYLI (kendi) mesajın index'i (i=0 en yeni).
+                // Bundan daha eski (i > idx) pending mesajlar da gönderilmiş sayılır.
+                final myId = config.userId;
+                int newestConfirmedMineIdx = -1;
+                for (int k = 0; k < messages.length; k++) {
+                  if (messages[k].senderId == myId && !messages[k].isPending) {
+                    newestConfirmedMineIdx = k;
+                    break;
+                  }
+                }
+                return RefreshIndicator(
                 onRefresh: () => _container
                         ?.read(messageListProvider(widget.roomId).notifier)
                         .refresh() ??
@@ -559,13 +590,19 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
                       i == messages.length - 1 ||
                       !_isSameDay(msg.createdAt, messages[i + 1].createdAt));
 
+                  // Daha yeni onaylı mesajım varsa bu da gönderilmiş sayılır:
+                  // çift tık + tam opaklık (soluk gösterme).
+                  final showAsSent = newestConfirmedMineIdx != -1 &&
+                      i > newestConfirmedMineIdx;
+                  final faded = msg.isPending && !showAsSent;
+
                   return Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       if (showSeparator)
                         _DateSeparator(date: msg.createdAt),
                       Opacity(
-                        opacity: msg.isPending ? 0.6 : 1.0,
+                        opacity: faded ? 0.6 : 1.0,
                         child: MessageBubble(
                         key: bubbleKey,
                         message: msg,
@@ -574,6 +611,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
                         serverUrl: serverUrl,
                         replyToMessage: replyTo,
                         showSenderAvatar: !isDirect,
+                        forceSent: showAsSent,
                         onReply: (m) => setState(() => _replyingTo = m),
                         onReact: (m, emoji) => ref
                             .read(stompServiceProvider)
@@ -587,7 +625,8 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
                   );
                 },
               ),
-              ),
+              );
+              },
             ),
           ),
           if (_pendingImage != null)

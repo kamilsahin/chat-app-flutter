@@ -1,3 +1,14 @@
+## 0.1.10
+
+- Fix: room subscription was never opened on the live connection when `subscribeToRoom` ran before STOMP finished connecting (a dead entry blocked `_resubscribeAll`). The sender's own message echo now arrives in real time instead of relying on a fallback refresh.
+- Fix: sending while disconnected no longer throws — the text input now clears, and the message is queued and auto-sent on reconnect (single tick → double tick once delivered).
+- Add outgoing message queue flushed on (re)connect.
+- Add post-send reconcile fallback: if a message is still pending after a few seconds, the list is refreshed from the server to confirm it.
+- `refresh()` now merges with in-memory state instead of `invalidateSelf` — pending/just-sent messages are no longer wiped, and live messages aren't dropped during the reload window.
+- Status ticks are monotonic: if a newer message of mine is confirmed, older still-pending ones render as sent (double tick) too.
+- Single tick (sending) → double tick (delivered) → blue double tick (read) shown inside the bubble.
+- Timestamp moved inside the bubble (bottom-right, WhatsApp-style); short messages keep the time on the same line, bubbles are compact.
+
 ## 0.1.9
 
 - Optimistic UI: date separator no longer flashes when sending a message.

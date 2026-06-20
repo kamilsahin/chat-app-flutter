@@ -32,6 +32,10 @@ class StompService {
   // Cleared after first connect; reconnects only call _resubscribeAll().
   final List<VoidCallback> _pendingConnectCallbacks = [];
 
+  // Bağlı değilken gönderilen mesajlar — bağlanınca sırayla gönderilir.
+  // Çağıran taraftaki optimistic pending mesaj, flush + echo ile onaylanır.
+  final List<({String roomId, String content, String? replyTo})> _outgoingQueue = [];
+
   StompService(this._config);
 
   void connect({required VoidCallback onConnected}) {
@@ -76,6 +80,8 @@ class StompService {
     final callbacks = List.of(_pendingConnectCallbacks);
     _pendingConnectCallbacks.clear();
     for (final cb in callbacks) cb();
+    // Abonelikler açıldıktan sonra kuyruktaki mesajları gönder.
+    _flushOutgoing();
   }
 
   void _handleDisconnected(StompFrame frame) {
@@ -101,13 +107,32 @@ class StompService {
   }
 
   void _openRoomSubscription(String roomId) {
+    // Bağlı değilken gerçek subscribe yapma — yoksa _subscriptions'a ölü kayıt
+    // girer ve bağlanınca _resubscribeAll bunu "zaten var" diye atlar, abonelik
+    // canlı bağlantıda hiç açılmaz. Handler zaten _messageHandlers'da; bağlanınca
+    // _resubscribeAll gerçek aboneliği açar.
+    if (!(_client?.connected ?? false)) return;
     if (_subscriptions.containsKey(roomId)) return;
     debugPrint('[STOMP] Subscribe → room.$roomId (handlers: ${_messageHandlers[roomId]?.length ?? 0})');
 
     final subs = <StompUnsubscribe>[];
 
+    // Shared topic — all room members receive messages here.
     subs.add(_client!.subscribe(
       destination: '/topic/room.$roomId',
+      callback: (frame) {
+        if (frame.body == null) return;
+        final msg = Message.fromJson(jsonDecode(frame.body!));
+        for (final h in List.of(_messageHandlers[roomId] ?? [])) {
+          h(msg);
+        }
+      },
+    ));
+
+    // Personal echo channel — backend sends sender's own message here too,
+    // so iOS SockJS polling timing issues don't leave the message stuck as pending.
+    subs.add(_client!.subscribe(
+      destination: '/user/queue/room.$roomId',
       callback: (frame) {
         if (frame.body == null) return;
         final msg = Message.fromJson(jsonDecode(frame.body!));
@@ -137,6 +162,7 @@ class StompService {
   }
 
   void _openUserRoomsSubscription(String userId, void Function(String roomId) onActivity) {
+    if (!(_client?.connected ?? false)) return; // bağlanınca _resubscribeAll açar
     if (_userRoomsSub != null) return;
     _userRoomsSub = _client?.subscribe(
       destination: '/topic/user.$userId.rooms',
@@ -156,6 +182,7 @@ class StompService {
     _messageHandlers.clear();
     _typingHandlers.clear();
     _pendingConnectCallbacks.clear();
+    _outgoingQueue.clear();
     _userRoomsSub = null;
     _userRoomsUserId = null;
     _userRoomsCallback = null;
@@ -208,7 +235,17 @@ class StompService {
     }
   }
 
+  /// Bağlı değilken _client.send() exception fırlatır; o yüzden gönderimden
+  /// önce daima bu guard'ı kullan. Bağlantı yoksa sessizce atla — çağıran
+  /// taraftaki optimistic mesaj pending kalır, reconnect/reconcile senkronlar.
+  bool get _canSend => _client?.connected ?? false;
+
   void sendMessage(String roomId, String content, {String? replyTo}) {
+    // Bağlı değilse kuyruğa al; bağlanınca _flushOutgoing gönderir.
+    if (!_canSend) {
+      _outgoingQueue.add((roomId: roomId, content: content, replyTo: replyTo));
+      return;
+    }
     _client?.send(
       destination: '/app/room.$roomId.send',
       body: jsonEncode({
@@ -219,7 +256,19 @@ class StompService {
     );
   }
 
+  /// Bağlantı (geri) kurulunca kuyruktaki mesajları sırayla gönderir.
+  void _flushOutgoing() {
+    if (_outgoingQueue.isEmpty) return;
+    final queued = List.of(_outgoingQueue);
+    _outgoingQueue.clear();
+    debugPrint('[STOMP] Kuyruktaki ${queued.length} mesaj gönderiliyor');
+    for (final m in queued) {
+      sendMessage(m.roomId, m.content, replyTo: m.replyTo);
+    }
+  }
+
   void sendTyping(String roomId, bool typing) {
+    if (!_canSend) return;
     _client?.send(
       destination: '/app/room.$roomId.typing',
       body: jsonEncode({'typing': typing}),
@@ -227,6 +276,7 @@ class StompService {
   }
 
   void sendReaction(String roomId, String messageId, String emoji) {
+    if (!_canSend) return;
     _client?.send(
       destination: '/app/room.$roomId.reaction',
       body: jsonEncode({'messageId': messageId, 'emoji': emoji}),
@@ -234,6 +284,7 @@ class StompService {
   }
 
   void sendReadReceipt(String roomId, String messageId) {
+    if (!_canSend) return;
     _client?.send(
       destination: '/app/room.$roomId.read',
       body: jsonEncode(messageId),

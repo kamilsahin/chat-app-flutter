@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/room.dart';
 import '../models/message.dart';
+import 'config_provider.dart';
 import 'service_providers.dart';
 
 // Currently open room — set by RoomScreen so unread count is not incremented
@@ -190,7 +191,7 @@ class MessageListNotifier
     final current = state.valueOrNull;
     if (current == null) return;
 
-    // 1. Exact id match — reaction/edit update, replace in place.
+    // 1. Exact id match — reaction/edit/read update, replace in place.
     final idx = current.indexWhere((m) => m.id == message.id);
     if (idx != -1) {
       final copy = List<Message>.from(current);
@@ -199,16 +200,26 @@ class MessageListNotifier
       return;
     }
 
-    // 2. Any pending message with same content → replace atomically.
-    //    Also strip any other stale pending messages to avoid duplicates.
-    final withoutPending = current.where((m) => !m.isPending).toList();
-    if (withoutPending.length != current.length) {
-      // There were pending messages — insert confirmed at top (already stripped above)
-      state = AsyncData([message, ...withoutPending]);
-      return;
+    // 2. My own confirmed echo → replace the matching pending message in place
+    //    (single tick → double tick), keeping its position. Match by content so
+    //    multiple in-flight messages each resolve to the right bubble (FIFO).
+    final myId = ref.read(chatConfigProvider).userId;
+    if (message.senderId == myId) {
+      // Liste yeniden-sıralı (en yeni başta); en eski pending listenin sonunda.
+      // Echo'lar gönderim sırasıyla geldiği için en eskiyi (lastIndexWhere) eşle.
+      final pIdx = current.lastIndexWhere((m) =>
+          m.isPending &&
+          m.type == message.type &&
+          m.content == message.content);
+      if (pIdx != -1) {
+        final copy = List<Message>.from(current);
+        copy[pIdx] = message; // real id, isPending = false
+        state = AsyncData(copy);
+        return;
+      }
     }
 
-    // 3. New message from someone else (or our own from another device).
+    // 3. Brand-new message (from someone else, or our own from another device).
     state = AsyncData([message, ...current]);
   }
 
@@ -219,18 +230,47 @@ class MessageListNotifier
     state = AsyncData([message, ...current]);
   }
 
-  /// API'dan en güncel mesajları yeniden çeker.
-  /// Yalnızca cache'li veri varsa (AsyncData) invalidate eder;
-  /// provider zaten yükleniyorsa (ilk açılış) dokunmaz → race condition önlenir.
+  /// API'dan en güncel mesajları çeker ve mevcut bellekteki listeyle BİRLEŞTİRİR.
+  ///
+  /// invalidateSelf KULLANMAZ — çünkü o, listeyi komple API verisiyle değiştirip
+  /// (a) henüz API'ye yansımamış yeni gönderilen mesajı, (b) pending optimistic
+  /// mesajları siler; ayrıca yeniden yükleme penceresinde (AsyncLoading) gelen
+  /// STOMP mesajları düşer. Merge ile state hiç AsyncData'dan çıkmaz, hiçbir
+  /// canlı/pending mesaj kaybolmaz.
   Future<void> refresh() async {
     if (state is! AsyncData) return;
+    final current = state.valueOrNull ?? const <Message>[];
+
+    List<Message> fresh;
+    try {
+      fresh = await ref
+          .read(apiServiceProvider)
+          .getMessages(arg)
+          .timeout(const Duration(seconds: 15));
+    } catch (_) {
+      return; // ağ hatası → mevcut listeyi koru
+    }
     _hasMore = true;
-    ref.invalidateSelf();
-    // Timeout ekle — ağ hatasında caller sonsuza kadar beklemesin.
-    await future.timeout(
-      const Duration(seconds: 15),
-      onTimeout: () => state.valueOrNull ?? [],
-    );
+
+    // Union by id: fresh (sunucu gerçeği) + bellekte olup fresh'te olmayanlar
+    // (henüz API sayfasına düşmemiş yeni mesaj veya pending olanlar).
+    final freshIds = fresh.map((m) => m.id).toSet();
+    final kept = current.where((m) => !freshIds.contains(m.id));
+    final merged = [...fresh, ...kept];
+
+    // Pending bir mesajın onaylanmış ikizi (aynı gönderen+tip+içerik) listede
+    // varsa pending kopyayı düş — çift görünmesin.
+    final confirmedKeys = merged
+        .where((m) => !m.isPending)
+        .map((m) => '${m.senderId}|${m.type.index}|${m.content}')
+        .toSet();
+    final result = merged
+        .where((m) => !(m.isPending &&
+            confirmedKeys.contains('${m.senderId}|${m.type.index}|${m.content}')))
+        .toList()
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+    state = AsyncData(result);
   }
 
   void updateMessage(Message updated) {
