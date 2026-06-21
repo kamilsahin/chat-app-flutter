@@ -1,3 +1,7 @@
+## 0.1.11
+
+- Fix: connection errors (DioException, SocketException) now display a friendly "Bağlantı hatası, lütfen tekrar deneyin." message instead of raw exception text.
+
 ## 0.1.10
 
 - Fix: room subscription was never opened on the live connection when `subscribeToRoom` ran before STOMP finished connecting (a dead entry blocked `_resubscribeAll`). The sender's own message echo now arrives in real time instead of relying on a fallback refresh.

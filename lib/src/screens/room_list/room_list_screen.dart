@@ -143,7 +143,18 @@ class _RoomListScreenState extends ConsumerState<RoomListScreen> {
             children: [
               const Icon(Icons.error_outline, color: Colors.red, size: 48),
               const SizedBox(height: 12),
-              Text(e.toString(), style: TextStyle(color: t.textMutedColor)),
+              Text(
+                () {
+                  final msg = e.toString();
+                  final isConn = msg.contains('SocketException') ||
+                      msg.contains('DioException') ||
+                      msg.contains('Connection') ||
+                      msg.contains('Null check operator') ||
+                      msg.contains('HandshakeException');
+                  return isConn ? 'Bağlantı hatası, lütfen tekrar deneyin.' : msg;
+                }(),
+                style: TextStyle(color: t.textMutedColor),
+              ),
               TextButton(
                 onPressed: () => ref.read(roomListProvider(widget.typeFilter).notifier).refresh(),
                 child: Text('Tekrar Dene', style: TextStyle(color: t.primaryColor)),
